@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/Seobject/Seobject-patches/compare/v1.0.0...v1.0.1) (2026-07-14)
+
+### Bug Fixes
+
+* update patch wording and bundle metadata ([db207dc](https://github.com/Seobject/Seobject-patches/commit/db207dc6ed4d5bc68a78c3355e6c8b7afb94edb6))
+
 ## 1.0.0 (2026-07-14)
 
 ### Bug Fixes
