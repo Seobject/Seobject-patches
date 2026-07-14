@@ -108,7 +108,7 @@ val pinPlaylistPatch = bytecodePatch(
         val menuItemPresenterClass =
             PlaylistMenuItemPresenterClassFingerprint.classDef
 
-        check(menuItemPresenterClass.type == "Lqup;") {
+        check(menuItemPresenterClass.type != "Lqks;") {
             "The dev Pin playlists bundle supports only YouTube Music 9.24.51, " +
                 "9.25.50, and 9.26.51. Use Seobjects Random Patches (Stable) for 9.15.51."
         }
