@@ -1,6 +1,6 @@
-# 🧩 Seobject Patches
+# 🧩 Seobjects Random Patches
 
-A patch bundle for YouTube Music.
+Random QoL patches for YouTube Music.
 
 ## 🩹 Patches list
 

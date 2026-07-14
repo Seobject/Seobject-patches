@@ -2,13 +2,13 @@ group = "app.morphe"
 
 patches {
     about {
-        name = "Pin Playlists"
-        description = "A standalone YouTube Music Pin playlists patch bundle"
-        source = "local"
-        author = "Evan"
+        name = "Seobjects Random Patches"
+        description = "Random QoL Patches"
+        source = "git@github.com:Seobject/Seobject-patches.git"
+        author = "Seobject"
         contact = "na"
-        website = "https://morphe.software"
-        license = "GNU General Public License v3.0, with additional GPL section 7 requirements"
+        website = "na"
+        license = "GPLv3"
     }
 }
 

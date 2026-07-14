@@ -13,7 +13,7 @@ module.exports = {
       created_at: createdAt,
       description:
         (nextRelease.notes || "").trim() ||
-        "Pin Playlists patch bundle for YouTube Music.",
+        "Random QoL Patches",
       download_url: `https://github.com/${repository}/releases/download/${tag}/${filename}`,
       signature_download_url: "N/A",
       version: tag,

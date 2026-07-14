@@ -2,7 +2,7 @@
   "name": "seobject-patches",
   "private": true,
   "packageManager": "pnpm@11.7.0",
-  "description": "Release tooling for the YouTube Music Pin Playlists patch bundle",
+  "description": "Release tooling for Seobjects Random Patches",
   "repository": {
     "type": "git",
     "url": "https://github.com/Seobject/Seobject-patches.git"
