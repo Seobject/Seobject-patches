@@ -24,6 +24,10 @@ A patch bundle for YouTube Music.
 
 <!-- PATCHES_END -->
 
+## Universal ReVanced Manager
+
+Import the [patch bundle manifest](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/patch-bundle.json) to add this bundle to Universal ReVanced Manager.
+
 ## 📜 License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
