@@ -1,3 +1,9 @@
+## [1.1.0-dev.3](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.2...v1.1.0-dev.3) (2026-07-14)
+
+### Bug Fixes
+
+* avoid version-specific menu presenter references ([91e2381](https://github.com/Seobject/Seobject-patches/commit/91e2381bccd9f6e0116b3965b61dbeadad98370b))
+
 ## [1.1.0-dev.2](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.1...v1.1.0-dev.2) (2026-07-14)
 
 ### Bug Fixes
