@@ -1,3 +1,9 @@
+## [1.0.3](https://github.com/Seobject/Seobject-patches/compare/v1.0.2...v1.0.3) (2026-07-14)
+
+### Bug Fixes
+
+* support stable YouTube Music 9.15.51 ([138e316](https://github.com/Seobject/Seobject-patches/commit/138e316a1328f8395b3f53b519f25f4c0a27369f))
+
 ## [1.0.2](https://github.com/Seobject/Seobject-patches/compare/v1.0.1...v1.0.2) (2026-07-14)
 
 ### Bug Fixes
