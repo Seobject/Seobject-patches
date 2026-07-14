@@ -1,3 +1,9 @@
+## [1.1.0-dev.1](https://github.com/Seobject/Seobject-patches/compare/v1.0.3...v1.1.0-dev.1) (2026-07-14)
+
+### Features
+
+* add experimental newer YouTube Music support ([171c14f](https://github.com/Seobject/Seobject-patches/commit/171c14f93add58c5711d6c66347b815f397e4774))
+
 ## [1.0.3](https://github.com/Seobject/Seobject-patches/compare/v1.0.2...v1.0.3) (2026-07-14)
 
 ### Bug Fixes
