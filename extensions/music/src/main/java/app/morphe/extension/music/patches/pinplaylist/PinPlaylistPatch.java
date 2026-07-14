@@ -37,7 +37,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v91-presenter-agnostic-click";
+    private static final String BUILD_ID = "v92-safe-flyout-hooks";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
             {"arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
@@ -645,6 +645,23 @@ public final class PinPlaylistPatch {
             @Nullable Object sourceObject,
             @Nullable Object flyoutPresenter
     ) {
+        try {
+            captureFlyoutSourceInternal(
+                    flyoutMenu,
+                    sourceObject,
+                    flyoutPresenter
+            );
+        } catch (Throwable error) {
+            Log.e(TAG, "Failed capturing flyout source", error);
+            resetFlyoutIdentityMappings();
+        }
+    }
+
+    private static void captureFlyoutSourceInternal(
+            @Nullable Object flyoutMenu,
+            @Nullable Object sourceObject,
+            @Nullable Object flyoutPresenter
+    ) {
         if (!isFeatureEnabled()) {
             return;
         }
@@ -1124,6 +1141,23 @@ public final class PinPlaylistPatch {
      * stock state unchanged.
      */
     public static boolean guardNativeToggleMutation(
+            @Nullable Object presenter,
+            boolean nativeState,
+            boolean modelState
+    ) {
+        try {
+            return guardNativeToggleMutationInternal(
+                    presenter,
+                    nativeState,
+                    modelState
+            );
+        } catch (Throwable error) {
+            Log.e(TAG, "Failed guarding native menu toggle", error);
+            return nativeState;
+        }
+    }
+
+    private static boolean guardNativeToggleMutationInternal(
             @Nullable Object presenter,
             boolean nativeState,
             boolean modelState
@@ -6872,6 +6906,23 @@ public final class PinPlaylistPatch {
     }
 
     public static void captureFlyoutViewContext(
+            @Nullable View clickedView,
+            @Nullable Object sourceObject
+    ) {
+        try {
+            captureFlyoutViewContextInternal(
+                    clickedView,
+                    sourceObject
+            );
+        } catch (Throwable error) {
+            Log.e(TAG, "Failed capturing flyout View context", error);
+            clearActiveFlyoutRowContext();
+            pendingFlyoutViewPlaylistId = null;
+            pendingFlyoutViewCapturedAtMs = 0L;
+        }
+    }
+
+    private static void captureFlyoutViewContextInternal(
             @Nullable View clickedView,
             @Nullable Object sourceObject
     ) {
