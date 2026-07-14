@@ -6,10 +6,7 @@
       "name": "Pin playlists",
       "description": "Replaces Speed Dial pinning with persistent Library playlist pinning.",
       "default": true,
-      "dependencies": [
-        "BytecodePatch",
-        "BytecodePatch"
-      ],
+      "dependencies": [],
       "compatiblePackages": [
         {
           "packageName": "com.google.android.apps.youtube.music",
@@ -23,9 +20,23 @@
           ],
           "targets": [
             {
-              "version": "9.15.51",
+              "version": "9.26.51",
               "versionCodes": null,
-              "isExperimental": false,
+              "isExperimental": true,
+              "minSdk": 26,
+              "description": null
+            },
+            {
+              "version": "9.25.50",
+              "versionCodes": null,
+              "isExperimental": true,
+              "minSdk": 26,
+              "description": null
+            },
+            {
+              "version": "9.24.51",
+              "versionCodes": null,
+              "isExperimental": true,
               "minSdk": 26,
               "description": null
             }
