@@ -96,8 +96,8 @@ internal object PlaylistFlyoutSourceFingerprint : Fingerprint(
 )
 
 val pinPlaylistPatch = bytecodePatch(
-    name = "Pin playlists (stable)",
-    description = "Stable YouTube Music 9.15.51 patch that replaces Speed Dial pinning with persistent Library playlist pinning.",
+    name = "Pin playlists",
+    description = "Replaces Speed Dial pinning with persistent Library playlist pinning on YouTube Music 9.15.51.",
 ) {
     compatibleWith(COMPATIBILITY_YOUTUBE_MUSIC)
     dependsOn(pinPlaylistSettingsResourcePatch)
