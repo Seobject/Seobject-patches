@@ -37,7 +37,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v90-stable-library-adapter";
+    private static final String BUILD_ID = "v99-stable-live-source-moves";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
             {"arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
@@ -120,6 +120,11 @@ public final class PinPlaylistPatch {
     private static final IdentityHashMap<Object, Map<Long, String>>
             adapterPlaylistIds = new IdentityHashMap<>();
 
+    /* Stable row IDs for ordinary playlist rows only (not Recently played,
+     * Liked Music, artists, or other fixed Library entries). */
+    private static final IdentityHashMap<Object, Set<Long>>
+            adapterOrdinaryPlaylistRows = new IdentityHashMap<>();
+
     private static final IdentityHashMap<Object, List<Long>>
             adapterBaseOrder = new IdentityHashMap<>();
 
@@ -174,6 +179,17 @@ public final class PinPlaylistPatch {
     private static final IdentityHashMap<Object, int[]>
             adapterVisualToSourcePositions =
             new IdentityHashMap<>();
+
+    /* Fingerprint of the native 9.15.51 row list and current local pin order
+     * last prepared before RecyclerView's first bind. */
+    private static final IdentityHashMap<Object, String>
+            stablePrebindKeys = new IdentityHashMap<>();
+
+    /* Set only around a user-initiated stable pin/unpin. Normal Library data
+     * refreshes install the map silently before bind; live changes additionally
+     * dispatch RecyclerView move notifications against the visible adapter. */
+    private static boolean stableDelegateLiveUpdateRequested;
+    private static boolean stableDelegateLiveUpdateApplied;
 
     /*
      * Visible local-pin state for the Library rows. The factory map already
@@ -2073,8 +2089,11 @@ public final class PinPlaylistPatch {
                 );
 
         if (!refreshedFactoryMap) {
-            clearAllAdapterPositionRemaps("pinToggleFallback");
+            refreshedFactoryMap =
+                    refreshStableDelegatePositionMapAfterToggle();
+        }
 
+        if (!refreshedFactoryMap) {
             Object adapter = activeLibraryAdapter;
             Long rowId = matchingRowContext
                     ? activeFlyoutStableRowId
@@ -2684,13 +2703,7 @@ public final class PinPlaylistPatch {
                 enabled = lastFeatureEnabledState;
 
                 if (enabled == null) {
-                    enabled = true;
-
-                    /*
-                     * Selecting the patch is the feature toggle. Keep the
-                     * runtime extension independent of Morphe's settings
-                     * bundle so both patch bundles can be applied together.
-                     */
+                    enabled = PinPlaylistSettings.ENABLED.get();
                     lastFeatureEnabledState = enabled;
 
                     Log.d(TAG, "PinPlaylistFeatureStartup"
@@ -2743,7 +2756,7 @@ public final class PinPlaylistPatch {
             enabled = lastSeparateMenuItemEnabledState;
             if (enabled != null) return enabled;
 
-            enabled = true;
+            enabled = PinPlaylistSettings.SEPARATE_MENU_ITEM.get();
 
             lastSeparateMenuItemEnabledState = enabled;
 
@@ -2894,7 +2907,8 @@ public final class PinPlaylistPatch {
                 buildAdapterProxyFactoryPositionMap(
                         owner,
                         sourceAdapter,
-                        sourceCount
+                        sourceCount,
+                        "getItem"
                 );
 
         if (visualToSource == null) {
@@ -2970,7 +2984,8 @@ public final class PinPlaylistPatch {
     private static int[] buildAdapterProxyFactoryPositionMap(
             Object owner,
             Object sourceAdapter,
-            int sourceCount
+            int sourceCount,
+            String itemAccessor
     ) {
         Context context = resolveApplicationContext();
         if (context == null) {
@@ -3011,7 +3026,7 @@ public final class PinPlaylistPatch {
             Object sourceItem =
                     invokeOneIntArgument(
                             sourceAdapter,
-                            "getItem",
+                            itemAccessor,
                             position
                     );
 
@@ -4753,7 +4768,8 @@ public final class PinPlaylistPatch {
                 buildAdapterProxyFactoryPositionMap(
                         owner,
                         sourceAdapter,
-                        sourceCount
+                        sourceCount,
+                        "getItem"
                 );
 
         if (visualToSource == null) {
@@ -4811,6 +4827,67 @@ public final class PinPlaylistPatch {
         return true;
     }
 
+    private static boolean
+    refreshStableDelegatePositionMapAfterToggle() {
+        Object adapter = activeLibraryAdapter;
+        if (adapter == null
+                || !"hvx".equals(objectTypeName(adapter))) {
+            return false;
+        }
+
+        Object controller = readFieldByName(adapter, "d");
+        Object listObject = readFieldByName(controller, "b");
+        if (!(listObject instanceof List)) return false;
+
+        List<?> items = (List<?>) listObject;
+        int total = items.size();
+        if (total < 2) return false;
+
+        Context context = resolveApplicationContext();
+        if (context == null) return false;
+
+        List<String> pinOrder =
+                new ArrayList<>(PinStore.getPinnedIds(context));
+
+        if (pinOrder.isEmpty()) {
+            int[] nativeOrder = new int[total];
+            for (int position = 0;
+                 position < total;
+                 position++) {
+                nativeOrder[position] = position;
+            }
+
+            String notifications =
+                    installAdapterPermutation(
+                            adapter,
+                            nativeOrder
+                    );
+
+            synchronized (adapterVisualPlaylistIds) {
+                adapterVisualPlaylistIds.remove(adapter);
+                adapterPinnedVisualPositions.remove(adapter);
+            }
+            synchronized (stablePrebindKeys) {
+                stablePrebindKeys.remove(adapter);
+            }
+
+            Log.d(TAG, "StableDelegateLiveRestore"
+                    + " total=" + total
+                    + " notifications=" + notifications);
+            return true;
+        }
+
+        stableDelegateLiveUpdateApplied = false;
+        stableDelegateLiveUpdateRequested = true;
+        try {
+            prepareStableLibraryAdapter(adapter);
+        } finally {
+            stableDelegateLiveUpdateRequested = false;
+        }
+
+        return stableDelegateLiveUpdateApplied;
+    }
+
     private static boolean hasActiveAdapterPositionMap(
             @Nullable Object adapter,
             int expectedSize
@@ -4826,6 +4903,444 @@ public final class PinPlaylistPatch {
             return visualToSource != null
                     && visualToSource.length == expectedSize;
         }
+    }
+
+    /**
+     * 9.15.51 pre-bind ordering path.
+     *
+     * hvx.getItemCount() runs after hwa.b contains the complete native row
+     * list, but before RecyclerView asks for view types, stable IDs, or bound
+     * holders. Resolve playlist identity from those unbound row models and
+     * install the same visual-to-source permutation used by the newer
+     * AdapterProxy path. No adapter notification is needed because no holder
+     * has observed the native order yet.
+     */
+    public static void prepareStableLibraryAdapter(
+            @Nullable Object adapter
+    ) {
+        if (!isFeatureEnabled()
+                || !hasAnyPinsFast()
+                || !isLibraryAdapter(adapter)) {
+            return;
+        }
+
+        Object controller = readFieldByName(adapter, "d");
+        Object listObject = readFieldByName(controller, "b");
+        if (!(listObject instanceof List)) return;
+
+        List<?> items = (List<?>) listObject;
+        int total = items.size();
+        if (total < 10 || total > 18) return;
+
+        Context context = resolveApplicationContext();
+        if (context == null) return;
+
+        List<String> pinOrder =
+                new ArrayList<>(PinStore.getPinnedIds(context));
+        if (pinOrder.isEmpty()) return;
+
+        List<Long> stableIds = stableIdsForItems(items);
+        String prebindKey = stableIds.toString()
+                + "|" + pinOrder.toString();
+
+        synchronized (stablePrebindKeys) {
+            if (prebindKey.equals(stablePrebindKeys.get(adapter))
+                    && hasActiveAdapterPositionMap(adapter, total)) {
+                return;
+            }
+        }
+
+        /*
+         * Proxy-backed Library rows keep only a shared render-info object in
+         * hwa.b. Their real byhm playlist models live in
+         * hwa.d (begp) -> b (bdmq) -> f (Lbdko). Read that delegate before
+         * RecyclerView binds anything; this is the 9.15.51 equivalent of the
+         * newer bfrh/bewt pre-factory path.
+         */
+        Object delegate = readFieldByName(controller, "d");
+        Object delegateAdapter = delegate == null
+                ? null
+                : readFieldByName(delegate, "b");
+
+        if ("bdmq".equals(objectTypeName(delegateAdapter))) {
+            Object sourceAdapter =
+                    readFieldByName(delegateAdapter, "f");
+            Integer sourceCount =
+                    invokeIntNoArg(sourceAdapter, "a");
+
+            if (sourceCount != null && sourceCount == total) {
+                int[] visualToSource =
+                        buildAdapterProxyFactoryPositionMap(
+                                delegateAdapter,
+                                sourceAdapter,
+                                sourceCount,
+                                "d"
+                        );
+
+                if (visualToSource != null) {
+                    Map<Integer, String> visualPlaylistIds;
+                    Set<Integer> pinnedVisualPositions;
+
+                    synchronized (ownerVisualPlaylistIds) {
+                        Map<Integer, String> ids =
+                                ownerVisualPlaylistIds.get(
+                                        delegateAdapter
+                                );
+                        Set<Integer> pinned =
+                                ownerPinnedVisualPositions.get(
+                                        delegateAdapter
+                                );
+
+                        visualPlaylistIds = ids == null
+                                ? new LinkedHashMap<Integer, String>()
+                                : new LinkedHashMap<>(ids);
+                        pinnedVisualPositions = pinned == null
+                                ? new LinkedHashSet<Integer>()
+                                : new LinkedHashSet<>(pinned);
+                    }
+
+                    LinkedHashMap<Long, String>
+                            playlistIdByStableId =
+                            new LinkedHashMap<>();
+                    LinkedHashSet<Long> ordinaryStableIds =
+                            new LinkedHashSet<>();
+
+                    for (Map.Entry<Integer, String> entry
+                            : visualPlaylistIds.entrySet()) {
+                        int visualPosition = entry.getKey();
+                        if (visualPosition < 0
+                                || visualPosition
+                                >= visualToSource.length) {
+                            continue;
+                        }
+
+                        int sourcePosition =
+                                visualToSource[visualPosition];
+                        if (sourcePosition < 0
+                                || sourcePosition >= items.size()) {
+                            continue;
+                        }
+
+                        Object stableIdObject = readFieldByName(
+                                items.get(sourcePosition),
+                                "b"
+                        );
+                        if (!(stableIdObject instanceof Number)) {
+                            continue;
+                        }
+
+                        long stableId =
+                                ((Number) stableIdObject).longValue();
+                        playlistIdByStableId.put(
+                                stableId,
+                                entry.getValue()
+                        );
+                        ordinaryStableIds.add(stableId);
+                    }
+
+                    synchronized (adapterVisualPlaylistIds) {
+                        adapterVisualPlaylistIds.put(
+                                adapter,
+                                visualPlaylistIds
+                        );
+                        adapterPinnedVisualPositions.put(
+                                adapter,
+                                pinnedVisualPositions
+                        );
+                    }
+                    synchronized (adapterPlaylistIds) {
+                        adapterPlaylistIds.put(
+                                adapter,
+                                playlistIdByStableId
+                        );
+                    }
+                    synchronized (adapterOrdinaryPlaylistRows) {
+                        adapterOrdinaryPlaylistRows.put(
+                                adapter,
+                                ordinaryStableIds
+                        );
+                    }
+                    synchronized (stablePrebindKeys) {
+                        stablePrebindKeys.put(adapter, prebindKey);
+                    }
+
+                    activeLibraryAdapter = adapter;
+                    activeLibraryBackingList = items;
+                    lastKnownLibraryPlaylistCount =
+                            visualPlaylistIds.size();
+
+                    String notifications;
+                    if (stableDelegateLiveUpdateRequested) {
+                        notifications = installAdapterPermutation(
+                                adapter,
+                                visualToSource
+                        );
+                        stableDelegateLiveUpdateApplied = true;
+                    } else {
+                        synchronized (adapterVisualToSourcePositions) {
+                            adapterVisualToSourcePositions.put(
+                                    adapter,
+                                    visualToSource
+                            );
+                        }
+                        notifications = "prebind";
+                    }
+
+                    Log.d(TAG, "StableDelegatePrebindInstalled"
+                            + " total=" + total
+                            + " sourceType="
+                            + objectTypeName(sourceAdapter)
+                            + " pinOrder=" + pinOrder
+                            + " notifications=" + notifications
+                            + " visualToSource="
+                            + java.util.Arrays.toString(
+                            visualToSource
+                    ));
+                } else {
+                    Log.d(TAG, "StableDelegatePrebindSkipped"
+                            + " reason=sourceMapUnavailable"
+                            + " total=" + total
+                            + " sourceType="
+                            + objectTypeName(sourceAdapter));
+                }
+            } else {
+                Log.d(TAG, "StableDelegatePrebindSkipped"
+                        + " reason=countMismatch"
+                        + " total=" + total
+                        + " sourceCount=" + sourceCount
+                        + " sourceType="
+                        + objectTypeName(sourceAdapter));
+            }
+
+            /* Never fall back to scanning shared hse proxy rows. They contain
+             * no playlist identity and repeatedly walking them caused the v97
+             * delay without producing a valid permutation. */
+            return;
+        }
+
+        long startedAt = SystemClock.uptimeMillis();
+        Map<String, String> persistedSignatures =
+                PinStore.getPlaylistSignatures(context);
+        LinkedHashMap<String, String> signatureToId =
+                new LinkedHashMap<>();
+
+        synchronized (playlistIdByRowSignature) {
+            signatureToId.putAll(playlistIdByRowSignature);
+        }
+
+        for (Map.Entry<String, String> entry
+                : persistedSignatures.entrySet()) {
+            if (isPersistentPlaylistId(entry.getKey())
+                    && entry.getValue() != null
+                    && !entry.getValue().isEmpty()) {
+                signatureToId.put(
+                        entry.getValue(),
+                        entry.getKey()
+                );
+            }
+        }
+
+        LinkedHashSet<String> knownPlaylistIds =
+                new LinkedHashSet<>(pinOrder);
+        knownPlaylistIds.addAll(persistedSignatures.keySet());
+
+        List<Integer> playlistSlots = new ArrayList<>();
+        LinkedHashMap<Integer, String> playlistIdBySource =
+                new LinkedHashMap<>();
+        LinkedHashMap<String, Integer> sourceByPlaylistId =
+                new LinkedHashMap<>();
+        LinkedHashMap<Long, String> playlistIdByStableId =
+                new LinkedHashMap<>();
+        LinkedHashSet<Long> ordinaryStableIds =
+                new LinkedHashSet<>();
+
+        for (int position = 0; position < total; position++) {
+            Object item = items.get(position);
+            Set<String> canonicalIds =
+                    collectCanonicalPlaylistIds(item, 10);
+            LinkedHashSet<String> persistentIds =
+                    new LinkedHashSet<>();
+
+            for (String candidate : canonicalIds) {
+                if (isPersistentPlaylistId(candidate)) {
+                    persistentIds.add(candidate);
+                }
+            }
+
+            String playlistId = resolveCanonicalPlaylistId(
+                    persistentIds,
+                    pinOrder,
+                    knownPlaylistIds
+            );
+
+            Set<String> sourceStrings = Collections.emptySet();
+            if (playlistId == null || signatureToId.size() > 0) {
+                sourceStrings = collectObjectStrings(item);
+            }
+
+            if (playlistId == null && !signatureToId.isEmpty()) {
+                String signature = findUniqueKnownRowSignature(
+                        sourceStrings,
+                        signatureToId
+                );
+                if (signature != null) {
+                    playlistId = signatureToId.get(signature);
+                }
+            }
+
+            boolean ordinaryPlaylist =
+                    isPersistentPlaylistId(playlistId);
+
+            if (!ordinaryPlaylist) {
+                for (String value : sourceStrings) {
+                    if (value == null) continue;
+                    String normalized = value.trim();
+                    if (normalized.equals("Playlist")
+                            || normalized.startsWith("Playlist â€¢ ")
+                            || normalized.startsWith("Playlist • ")) {
+                        ordinaryPlaylist = true;
+                        break;
+                    }
+                }
+            }
+
+            Object stableIdObject = readFieldByName(item, "b");
+            Long stableId = stableIdObject instanceof Number
+                    ? ((Number) stableIdObject).longValue()
+                    : null;
+
+            if (ordinaryPlaylist) {
+                playlistSlots.add(position);
+                if (stableId != null) {
+                    ordinaryStableIds.add(stableId);
+                }
+            }
+
+            if (!isPersistentPlaylistId(playlistId)) continue;
+            if (sourceByPlaylistId.containsKey(playlistId)) {
+                Log.d(TAG, "StablePrebindSkipped"
+                        + " reason=duplicatePlaylistId"
+                        + " playlistId=" + playlistId);
+                return;
+            }
+
+            playlistIdBySource.put(position, playlistId);
+            sourceByPlaylistId.put(playlistId, position);
+            if (stableId != null) {
+                playlistIdByStableId.put(stableId, playlistId);
+            }
+        }
+
+        List<Integer> desiredPlaylistSources = new ArrayList<>();
+        Set<Integer> pinnedSources = new LinkedHashSet<>();
+        List<String> pinnedPresent = new ArrayList<>();
+
+        for (String pinnedId : pinOrder) {
+            Integer sourcePosition = sourceByPlaylistId.get(pinnedId);
+            if (sourcePosition == null) continue;
+
+            desiredPlaylistSources.add(sourcePosition);
+            pinnedSources.add(sourcePosition);
+            pinnedPresent.add(pinnedId);
+        }
+
+        if (pinnedPresent.isEmpty() || playlistSlots.size() < 2) {
+            Log.d(TAG, "StablePrebindSkipped"
+                    + " reason=incompleteIdentity"
+                    + " total=" + total
+                    + " playlistSlots=" + playlistSlots
+                    + " mapped=" + playlistIdBySource
+                    + " pinnedPresent=" + pinnedPresent);
+            return;
+        }
+
+        for (Integer sourcePosition : playlistSlots) {
+            if (!pinnedSources.contains(sourcePosition)) {
+                desiredPlaylistSources.add(sourcePosition);
+            }
+        }
+
+        if (desiredPlaylistSources.size() != playlistSlots.size()) {
+            Log.d(TAG, "StablePrebindSkipped"
+                    + " reason=slotMismatch"
+                    + " slots=" + playlistSlots
+                    + " desired=" + desiredPlaylistSources);
+            return;
+        }
+
+        int[] visualToSource = new int[total];
+        for (int position = 0; position < total; position++) {
+            visualToSource[position] = position;
+        }
+
+        LinkedHashMap<Integer, String> visualPlaylistIds =
+                new LinkedHashMap<>();
+        LinkedHashSet<Integer> pinnedVisualPositions =
+                new LinkedHashSet<>();
+
+        for (int index = 0; index < playlistSlots.size(); index++) {
+            int visualPosition = playlistSlots.get(index);
+            int sourcePosition = desiredPlaylistSources.get(index);
+            visualToSource[visualPosition] = sourcePosition;
+
+            String playlistId = playlistIdBySource.get(sourcePosition);
+            if (playlistId != null) {
+                visualPlaylistIds.put(visualPosition, playlistId);
+            }
+            if (pinnedSources.contains(sourcePosition)) {
+                pinnedVisualPositions.add(visualPosition);
+            }
+        }
+
+        boolean[] seen = new boolean[total];
+        for (int sourcePosition : visualToSource) {
+            if (sourcePosition < 0
+                    || sourcePosition >= total
+                    || seen[sourcePosition]) {
+                Log.d(TAG, "StablePrebindSkipped"
+                        + " reason=notPermutation"
+                        + " visualToSource="
+                        + java.util.Arrays.toString(visualToSource));
+                return;
+            }
+            seen[sourcePosition] = true;
+        }
+
+        synchronized (adapterVisualToSourcePositions) {
+            adapterVisualToSourcePositions.put(
+                    adapter,
+                    visualToSource
+            );
+        }
+        synchronized (adapterVisualPlaylistIds) {
+            adapterVisualPlaylistIds.put(adapter, visualPlaylistIds);
+            adapterPinnedVisualPositions.put(
+                    adapter,
+                    pinnedVisualPositions
+            );
+        }
+        synchronized (adapterPlaylistIds) {
+            adapterPlaylistIds.put(adapter, playlistIdByStableId);
+        }
+        synchronized (adapterOrdinaryPlaylistRows) {
+            adapterOrdinaryPlaylistRows.put(adapter, ordinaryStableIds);
+        }
+        synchronized (stablePrebindKeys) {
+            stablePrebindKeys.put(adapter, prebindKey);
+        }
+
+        activeLibraryAdapter = adapter;
+        activeLibraryBackingList = items;
+        lastKnownLibraryPlaylistCount = playlistSlots.size();
+
+        Log.d(TAG, "StablePrebindInstalled"
+                + " total=" + total
+                + " elapsedMs="
+                + (SystemClock.uptimeMillis() - startedAt)
+                + " playlistSlots=" + playlistSlots
+                + " pinnedPresent=" + pinnedPresent
+                + " visualToSource="
+                + java.util.Arrays.toString(visualToSource));
     }
 
     private static void beginAdapterPositionRemap(
@@ -4893,6 +5408,27 @@ public final class PinPlaylistPatch {
         }
 
         return sourcePosition;
+    }
+
+    private static int mappedSourcePosition(
+            @Nullable Object adapter,
+            int visualPosition
+    ) {
+        if (adapter == null || visualPosition < 0) {
+            return visualPosition;
+        }
+
+        synchronized (adapterVisualToSourcePositions) {
+            int[] visualToSource =
+                    adapterVisualToSourcePositions.get(adapter);
+
+            if (visualToSource != null
+                    && visualPosition < visualToSource.length) {
+                return visualToSource[visualPosition];
+            }
+        }
+
+        return visualPosition;
     }
 
 
@@ -5443,9 +5979,13 @@ public final class PinPlaylistPatch {
         if (!(listObject instanceof List)) return;
 
         List<?> items = (List<?>) listObject;
+        if (items.size() < 10 || items.size() > 18) return;
         if (position < 0 || position >= items.size()) return;
 
-        Object item = items.get(position);
+        int sourcePosition = mappedSourcePosition(adapter, position);
+        if (sourcePosition < 0 || sourcePosition >= items.size()) return;
+
+        Object item = items.get(sourcePosition);
         Object stableIdObject = readFieldByName(item, "b");
         if (!(stableIdObject instanceof Number)) return;
 
@@ -5527,13 +6067,6 @@ public final class PinPlaylistPatch {
 
         List<?> items = (List<?>) listObject;
 
-        if (hasActiveAdapterPositionMap(
-                adapter,
-                items.size()
-        )) {
-            return;
-        }
-
         Object itemViewObject = readFieldByName(holder, "a");
         if (!(itemViewObject instanceof View)) return;
 
@@ -5545,16 +6078,63 @@ public final class PinPlaylistPatch {
         String rowSignature =
                 buildRowIdentitySignature(rowTexts);
 
-        Set<String> ids = collectPlaylistIdsFromBoundView(itemView);
-        String candidatePlaylistId = findBestPlaylistId(ids);
+        synchronized (adapterOrdinaryPlaylistRows) {
+            Set<Long> ordinaryRows =
+                    adapterOrdinaryPlaylistRows.get(adapter);
+
+            if (ordinaryRows == null) {
+                ordinaryRows = new LinkedHashSet<>();
+                adapterOrdinaryPlaylistRows.put(
+                        adapter,
+                        ordinaryRows
+                );
+            }
+
+            if (isOrdinaryPlaylistRow(rowTexts)) {
+                ordinaryRows.add(stableId);
+            } else {
+                ordinaryRows.remove(stableId);
+            }
+        }
+
+        Context context = itemView.getContext();
+
+        /*
+         * Binding must stay cheap. The overflow/flyout hook already captures
+         * the exact canonical ID and persists its row signature when a user
+         * pins a playlist. Never walk a Litho row's complete object graph on
+         * every bind; that made each visible row take hundreds of milliseconds.
+         */
         String playlistId = resolveBoundPlaylistId(
                 rowSignature,
-                candidatePlaylistId
+                null
         );
+        String candidatePlaylistId = null;
+
+        if (playlistId == null
+                && context != null
+                && rowSignature != null) {
+            candidatePlaylistId = findPersistedPlaylistIdBySignature(
+                    context,
+                    rowSignature
+            );
+            playlistId = resolveBoundPlaylistId(
+                    rowSignature,
+                    candidatePlaylistId
+            );
+        }
 
         rememberAdapterNativeOrder(adapter, items);
 
         if (playlistId == null) {
+            /* Holders are recycled; clear any pin left by the prior row. */
+            applyDirectFlyoutRowPinIndicator(
+                    itemView,
+                    false,
+                    null,
+                    "bound"
+            );
+
             if (boundRowNoIdLogCount < 40
                     && items.size() >= 10) {
                 boundRowNoIdLogCount++;
@@ -5591,8 +6171,6 @@ public final class PinPlaylistPatch {
                     + " rowText=" + rowText);
         }
 
-        Context context = itemView.getContext();
-
         if (context != null
                 && rowSignature != null
                 && !rowSignature.isEmpty()) {
@@ -5600,6 +6178,15 @@ public final class PinPlaylistPatch {
                     context,
                     playlistId,
                     rowSignature
+            );
+        }
+
+        if (context != null) {
+            applyDirectFlyoutRowPinIndicator(
+                    itemView,
+                    PinStore.isPinned(context, playlistId),
+                    playlistId,
+                    "bound"
             );
         }
 
@@ -5645,12 +6232,33 @@ public final class PinPlaylistPatch {
             String knownPlaylistId =
                     playlistIdByRowSignature.get(rowSignature);
 
-            if (knownPlaylistId != null) {
+            if (candidatePlaylistId == null) {
                 return knownPlaylistId;
             }
 
-            if (candidatePlaylistId == null) {
-                return null;
+            /*
+             * A canonical ID captured from the active flyout is newer and
+             * stronger evidence than an old recycled-row association. Repair
+             * the in-memory relation immediately instead of preserving a
+             * stale ID on the newly bound row.
+             */
+            if (knownPlaylistId != null
+                    && !knownPlaylistId.equals(candidatePlaylistId)) {
+                String reverse =
+                        rowSignatureByPlaylistId.get(knownPlaylistId);
+                if (rowSignature.equals(reverse)) {
+                    rowSignatureByPlaylistId.remove(knownPlaylistId);
+                }
+
+                playlistIdByRowSignature.put(
+                        rowSignature,
+                        candidatePlaylistId
+                );
+                rowSignatureByPlaylistId.put(
+                        candidatePlaylistId,
+                        rowSignature
+                );
+                return candidatePlaylistId;
             }
 
             String knownSignature =
@@ -5660,12 +6268,17 @@ public final class PinPlaylistPatch {
                     && !knownSignature.equals(rowSignature)) {
                 if (rowIdentityConflictLogCount < 30) {
                     rowIdentityConflictLogCount++;
-                    Log.d(TAG, "Rejected stale bound-row playlist id"
+                    Log.d(TAG, "Repaired stale bound-row playlist id"
                             + " candidateId=" + candidatePlaylistId
                             + " knownSignature=" + knownSignature
                             + " observedSignature=" + rowSignature);
                 }
-                return null;
+
+                String oldMapping =
+                        playlistIdByRowSignature.get(knownSignature);
+                if (candidatePlaylistId.equals(oldMapping)) {
+                    playlistIdByRowSignature.remove(knownSignature);
+                }
             }
 
             playlistIdByRowSignature.put(
@@ -5696,6 +6309,57 @@ public final class PinPlaylistPatch {
     }
 
     @Nullable
+    private static String findPersistedPlaylistIdBySignature(
+            Context context,
+            String rowSignature
+    ) {
+        String match = null;
+
+        for (Map.Entry<String, String> entry :
+                PinStore.getPlaylistSignatures(context).entrySet()) {
+            if (!rowSignature.equals(entry.getValue())) continue;
+
+            if (match != null && !match.equals(entry.getKey())) {
+                return null;
+            }
+
+            match = entry.getKey();
+        }
+
+        return match;
+    }
+
+    @Nullable
+    private static String findUniquePinnedPlaylistIdInBoundObjects(
+            Context context,
+            @Nullable Object boundItem,
+            @Nullable Object holder
+    ) {
+        Set<String> pinnedIds = PinStore.getPinnedIds(context);
+        if (pinnedIds.isEmpty()) return null;
+
+        LinkedHashSet<String> matches = new LinkedHashSet<>();
+
+        for (String candidate :
+                collectCanonicalPlaylistIds(boundItem, 10)) {
+            if (pinnedIds.contains(candidate)) {
+                matches.add(candidate);
+            }
+        }
+
+        for (String candidate :
+                collectCanonicalPlaylistIds(holder, 6)) {
+            if (pinnedIds.contains(candidate)) {
+                matches.add(candidate);
+            }
+        }
+
+        return matches.size() == 1
+                ? matches.iterator().next()
+                : null;
+    }
+
+    @Nullable
     private static String buildRowIdentitySignature(
             List<String> rowTexts
     ) {
@@ -5713,6 +6377,21 @@ public final class PinPlaylistPatch {
                 : "";
 
         return title + "\\u001f" + subtitle;
+    }
+
+    private static boolean isOrdinaryPlaylistRow(
+            @Nullable List<String> rowTexts
+    ) {
+        if (rowTexts == null || rowTexts.size() < 2) {
+            return false;
+        }
+
+        String subtitle = rowTexts.get(1);
+        if (subtitle == null) return false;
+
+        subtitle = subtitle.trim();
+        return subtitle.startsWith("Playlist ")
+                || subtitle.equals("Playlist");
     }
 
     private static String normalizeRowIdentityText(
@@ -6049,6 +6728,12 @@ public final class PinPlaylistPatch {
                     synchronized (adapterPlaylistIds) {
                         adapterPlaylistIds.remove(adapter);
                     }
+                    synchronized (adapterOrdinaryPlaylistRows) {
+                        adapterOrdinaryPlaylistRows.remove(adapter);
+                    }
+                    synchronized (adapterVisualToSourcePositions) {
+                        adapterVisualToSourcePositions.remove(adapter);
+                    }
                 }
 
                 Log.d(TAG, "Captured Library native order"
@@ -6309,25 +6994,30 @@ public final class PinPlaylistPatch {
         List list = (List) listObject;
         if (list.size() < 2) return;
 
-        if (hasActiveAdapterPositionMap(
-                adapter,
-                list.size()
-        )) {
-            Log.d(TAG, "PostBindPhysicalReorderSkipped"
-                    + " reason=positionMapActiveAtApply"
-                    + " adapterIdentity="
-                    + identityString(adapter)
-                    + " total=" + list.size());
-            return;
-        }
-
         Context context = resolveApplicationContext();
         if (context == null) return;
 
         List<String> pinnedOrder =
                 new ArrayList<>(PinStore.getPinnedIds(context));
-        Set<String> pinnedIds =
-                new LinkedHashSet<>(pinnedOrder);
+
+        if (pinnedOrder.isEmpty()) {
+            int[] nativeOrder = new int[list.size()];
+            for (int position = 0;
+                 position < nativeOrder.length;
+                 position++) {
+                nativeOrder[position] = position;
+            }
+
+            String notifications = installAdapterPermutation(
+                    adapter,
+                    nativeOrder
+            );
+
+            Log.d(TAG, "Restored native Library order"
+                    + " total=" + list.size()
+                    + " notifications=" + notifications);
+            return;
+        }
 
         Map<Long, String> mappings;
         synchronized (adapterPlaylistIds) {
@@ -6338,264 +7028,230 @@ public final class PinPlaylistPatch {
             mappings = new LinkedHashMap<>(existing);
         }
 
-        rememberAdapterNativeOrder(adapter, list);
-
-        List<Long> base;
-        synchronized (adapterBaseOrder) {
-            List<Long> existing = adapterBaseOrder.get(adapter);
-            if (existing == null) return;
-            base = new ArrayList<>(existing);
-        }
-
-        Map<Long, Object> itemById = new LinkedHashMap<>();
-        for (Object item : (List<?>) list) {
-            Object value = readFieldByName(item, "b");
-            if (!(value instanceof Number)) return;
-
-            long id = ((Number) value).longValue();
-            if (itemById.containsKey(id)) {
-                Log.e(TAG, "Skipping reorder: duplicate stable row ID " + id);
-                return;
-            }
-            itemById.put(id, item);
-        }
-
-        List<Object> nativeOrder = new ArrayList<>(list.size());
-        Set<Long> added = new LinkedHashSet<>();
-
-        for (Long id : base) {
-            Object item = itemById.get(id);
-            if (item != null) {
-                nativeOrder.add(item);
-                added.add(id);
-            }
-        }
-
-        for (Map.Entry<Long, Object> entry : itemById.entrySet()) {
-            if (!added.contains(entry.getKey())) {
-                nativeOrder.add(entry.getValue());
-            }
+        Set<Long> ordinaryRowIds;
+        synchronized (adapterOrdinaryPlaylistRows) {
+            Set<Long> existing =
+                    adapterOrdinaryPlaylistRows.get(adapter);
+            if (existing == null || existing.isEmpty()) return;
+            ordinaryRowIds = new LinkedHashSet<>(existing);
         }
 
         List<Integer> playlistSlots = new ArrayList<>();
-        List<Object> pinned = new ArrayList<>();
-        List<Object> unpinned = new ArrayList<>();
-        List<Long> pinnedStableIds = new ArrayList<>();
-        Set<String> distinctPlaylistIds = new LinkedHashSet<>();
-        Map<String, Object> playlistItemById = new LinkedHashMap<>();
-        Map<String, Long> playlistStableIdById = new LinkedHashMap<>();
+        Map<String, Integer> sourcePositionByPlaylistId =
+                new LinkedHashMap<>();
+        Map<Integer, String> playlistIdBySourcePosition =
+                new LinkedHashMap<>();
 
-        for (int index = 0; index < nativeOrder.size(); index++) {
-            Object item = nativeOrder.get(index);
+        for (int sourcePosition = 0;
+             sourcePosition < list.size();
+             sourcePosition++) {
+            Object item = list.get(sourcePosition);
             Object value = readFieldByName(item, "b");
+            if (!(value instanceof Number)) return;
+
             long stableId = ((Number) value).longValue();
+            if (!ordinaryRowIds.contains(stableId)) continue;
+
+            playlistSlots.add(sourcePosition);
+
             String playlistId = mappings.get(stableId);
-
-            if (!isPersistentPlaylistId(playlistId)) {
-                continue;
-            }
-
-            playlistSlots.add(index);
-            distinctPlaylistIds.add(playlistId);
-            playlistItemById.put(playlistId, item);
-            playlistStableIdById.put(playlistId, stableId);
-
-            if (!pinnedIds.contains(playlistId)) {
-                unpinned.add(item);
+            if (isPersistentPlaylistId(playlistId)) {
+                sourcePositionByPlaylistId.put(
+                        playlistId,
+                        sourcePosition
+                );
+                playlistIdBySourcePosition.put(
+                        sourcePosition,
+                        playlistId
+                );
             }
         }
+
+        List<Integer> desiredPlaylistSources = new ArrayList<>();
+        Set<Integer> pinnedSources = new LinkedHashSet<>();
+        List<Long> pinnedStableIds = new ArrayList<>();
 
         /*
          * Pinned rows follow local pin chronology, never the active Library
-         * sort. The first playlist pinned occupies the highest playlist slot,
-         * the second occupies the next slot, and so on. Unpinned rows continue
-         * to follow YouTube Music's native sort order.
+         * sort. Only ordinary playlist slots are permuted; Recently played,
+         * Liked Music, artists and every other fixed row keep their positions.
          */
         for (String playlistId : pinnedOrder) {
-            Object item = playlistItemById.get(playlistId);
-            Long stableId = playlistStableIdById.get(playlistId);
+            Integer sourcePosition =
+                    sourcePositionByPlaylistId.get(playlistId);
+            if (sourcePosition == null) continue;
 
-            if (item == null || stableId == null) continue;
+            desiredPlaylistSources.add(sourcePosition);
+            pinnedSources.add(sourcePosition);
 
-            pinned.add(item);
-            pinnedStableIds.add(stableId);
-        }
-
-        if (distinctPlaylistIds.size() < 3
-                && adapter != activeLibraryAdapter) {
-            return;
-        }
-
-        if (distinctPlaylistIds.size() >= 3) {
-            lastKnownLibraryPlaylistCount =
-                    distinctPlaylistIds.size();
-
-            synchronized (adapterExpectedPlaylistCount) {
-                adapterExpectedPlaylistCount.put(
-                        adapter,
-                        distinctPlaylistIds.size()
-                );
-            }
-        }
-
-        List<Object> partitionedPlaylists =
-                new ArrayList<>(playlistSlots.size());
-        partitionedPlaylists.addAll(pinned);
-        partitionedPlaylists.addAll(unpinned);
-
-        List<Object> desired = new ArrayList<>(nativeOrder);
-
-        for (int index = 0; index < playlistSlots.size(); index++) {
-            desired.set(
-                    playlistSlots.get(index),
-                    partitionedPlaylists.get(index)
+            Object value = readFieldByName(
+                    list.get(sourcePosition),
+                    "b"
             );
-        }
-
-        if (sameIdentityOrder(list, desired)) {
-            synchronized (adapterLastAppliedOrder) {
-                adapterLastAppliedOrder.put(
-                        adapter,
-                        stableIdsForItems(list)
+            if (value instanceof Number) {
+                pinnedStableIds.add(
+                        ((Number) value).longValue()
                 );
             }
+        }
+
+        if (desiredPlaylistSources.isEmpty()) return;
+
+        for (Integer sourcePosition : playlistSlots) {
+            if (!pinnedSources.contains(sourcePosition)) {
+                desiredPlaylistSources.add(sourcePosition);
+            }
+        }
+
+        if (desiredPlaylistSources.size() != playlistSlots.size()) {
+            Log.e(TAG, "Skipping virtual Library order: slot mismatch"
+                    + " slots=" + playlistSlots
+                    + " desired=" + desiredPlaylistSources);
             return;
         }
 
-        /*
-         * Keep a short multi-frame guard around native Litho moves. The
-         * stable-row remap guard now rejects recycled-holder conflicts, so the
-         * earlier three-second suppression window only delayed rapid refreshes
-         * and sort changes.
-         */
-        suppressAdapterBindCapture(adapter, 150L);
+        int[] visualToSource = new int[list.size()];
+        for (int position = 0;
+             position < visualToSource.length;
+             position++) {
+            visualToSource[position] = position;
+        }
 
-        List<String> nativeMoveNotifications =
-                new ArrayList<>();
-        List<String> fallbackMoveNotifications =
-                new ArrayList<>();
-        boolean usedFallbackMove = false;
-        boolean fallbackFullNotify = false;
+        for (int index = 0;
+             index < playlistSlots.size();
+             index++) {
+            visualToSource[playlistSlots.get(index)] =
+                    desiredPlaylistSources.get(index);
+        }
 
-        try {
-            /*
-             * Use Litho's own adapter move pipeline. hyz.z(source, target)
-             * delegates to hzc.I(source, target), allowing the renderer to
-             * move its backing item and ComponentTree together. The earlier
-             * remove/add + RecyclerView notification path changed hzc.b but
-             * did not reliably keep the on-screen Litho rows aligned after a
-             * Library sort rebuild.
-             */
-            for (int targetIndex = 0;
-                 targetIndex < desired.size();
-                 targetIndex++) {
-                Object desiredItem = desired.get(targetIndex);
-
-                if (list.get(targetIndex) == desiredItem) {
-                    continue;
-                }
-
-                int sourceIndex = indexOfIdentity(
-                        list,
-                        desiredItem,
-                        targetIndex + 1
-                );
-
-                if (sourceIndex < 0) {
-                    throw new IllegalStateException(
-                            "Desired Library item was not found"
-                                    + " targetIndex=" + targetIndex
-                    );
-                }
-
-                boolean nativeMoveInvoked = invokeTwoIntVoid(
-                        adapter,
-                        "z",
-                        sourceIndex,
-                        targetIndex
-                );
-
-                boolean nativeListMoved =
-                        targetIndex < list.size()
-                                && list.get(targetIndex) == desiredItem;
-
-                nativeMoveNotifications.add(
-                        sourceIndex + "->" + targetIndex
-                                + ":invoked=" + nativeMoveInvoked
-                                + ":listMoved=" + nativeListMoved
-                );
-
-                if (nativeMoveInvoked && nativeListMoved) {
-                    continue;
-                }
-
-                /*
-                 * Safety fallback for version drift. Only use the old direct
-                 * list mutation when the native move path is absent or did
-                 * not synchronously place the expected item.
-                 */
-                int fallbackSource = indexOfIdentity(
-                        list,
-                        desiredItem,
-                        0
-                );
-
-                if (fallbackSource < 0) {
-                    throw new IllegalStateException(
-                            "Fallback Library item was not found"
-                                    + " targetIndex=" + targetIndex
-                    );
-                }
-
-                Object movedItem = list.remove(fallbackSource);
-                list.add(targetIndex, movedItem);
-
-                boolean moveNotified = invokeTwoIntVoid(
-                        adapter,
-                        "jv",
-                        fallbackSource,
-                        targetIndex
-                );
-
-                fallbackMoveNotifications.add(
-                        fallbackSource + "->" + targetIndex
-                                + ":" + moveNotified
-                );
-
-                usedFallbackMove = true;
-
-                if (!moveNotified) {
-                    fallbackFullNotify = true;
-                }
+        boolean[] seen = new boolean[visualToSource.length];
+        for (int sourcePosition : visualToSource) {
+            if (sourcePosition < 0
+                    || sourcePosition >= visualToSource.length
+                    || seen[sourcePosition]) {
+                Log.e(TAG, "Skipping virtual Library order: not a permutation "
+                        + java.util.Arrays.toString(visualToSource));
+                return;
             }
-        } catch (Throwable error) {
-            Log.e(TAG, "Failed moving Library rows", error);
-            return;
+            seen[sourcePosition] = true;
         }
 
-        List<Long> applied = stableIdsForItems(list);
-        synchronized (adapterLastAppliedOrder) {
-            adapterLastAppliedOrder.put(adapter, applied);
-        }
+        activeLibraryAdapter = adapter;
+        String notifications = installAdapterPermutation(
+                adapter,
+                visualToSource
+        );
 
-        if (fallbackFullNotify) {
-            fallbackFullNotify = invokeNoArgVoid(adapter, "fq");
-        }
-
-        Log.d(TAG, "Applied pinned Library order"
+        Log.d(TAG, "Applied virtual pinned Library order"
                 + " total=" + list.size()
-                + " pinnedRows=" + pinned.size()
                 + " pinnedStableIds=" + pinnedStableIds
                 + " pinOrder=" + pinnedOrder
                 + " playlistSlots=" + playlistSlots
-                + " bindCaptureSuppressedMs=150"
-                + " nativeMoveNotifications="
-                + nativeMoveNotifications
-                + " usedFallbackMove=" + usedFallbackMove
-                + " fallbackMoveNotifications="
-                + fallbackMoveNotifications
-                + " fallbackFullNotify=" + fallbackFullNotify
-                + " order=" + applied);
+                + " notifications=" + notifications
+                + " visualToSource="
+                + java.util.Arrays.toString(visualToSource));
+    }
+
+    private static String installAdapterPermutation(
+            Object adapter,
+            int[] desired
+    ) {
+        int[] previous;
+
+        synchronized (adapterVisualToSourcePositions) {
+            int[] stored = adapterVisualToSourcePositions.get(adapter);
+
+            if (stored == null || stored.length != desired.length) {
+                previous = new int[desired.length];
+                for (int index = 0;
+                     index < previous.length;
+                     index++) {
+                    previous[index] = index;
+                }
+            } else {
+                previous = stored.clone();
+            }
+        }
+
+        if (java.util.Arrays.equals(previous, desired)) {
+            synchronized (adapterVisualToSourcePositions) {
+                adapterVisualToSourcePositions.put(
+                        adapter,
+                        desired.clone()
+                );
+            }
+            return "unchanged";
+        }
+
+        int[] working = previous.clone();
+        List<String> moves = new ArrayList<>();
+        boolean moveNotificationsSucceeded = true;
+
+        for (int target = 0; target < desired.length; target++) {
+            int desiredSource = desired[target];
+            if (working[target] == desiredSource) continue;
+
+            int source = -1;
+            for (int index = target + 1;
+                 index < working.length;
+                 index++) {
+                if (working[index] == desiredSource) {
+                    source = index;
+                    break;
+                }
+            }
+
+            if (source < 0) {
+                moveNotificationsSucceeded = false;
+                break;
+            }
+
+            int moved = working[source];
+            System.arraycopy(
+                    working,
+                    target,
+                    working,
+                    target + 1,
+                    source - target
+            );
+            working[target] = moved;
+
+            synchronized (adapterVisualToSourcePositions) {
+                adapterVisualToSourcePositions.put(
+                        adapter,
+                        working.clone()
+                );
+            }
+
+            boolean notified = invokeTwoIntVoid(
+                    adapter,
+                    "iF",
+                    source,
+                    target
+            );
+            moves.add(source + "->" + target + ":" + notified);
+
+            if (!notified) {
+                moveNotificationsSucceeded = false;
+                break;
+            }
+        }
+
+        if (moveNotificationsSucceeded
+                && java.util.Arrays.equals(working, desired)) {
+            return "moves=" + moves;
+        }
+
+        synchronized (adapterVisualToSourcePositions) {
+            adapterVisualToSourcePositions.put(
+                    adapter,
+                    desired.clone()
+            );
+        }
+
+        boolean fullNotify = invokeNoArgVoid(adapter, "eB")
+                || invokeNoArgVoid(adapter, "fq");
+        return "moves=" + moves + ",fallbackFullNotify=" + fullNotify;
     }
 
     private static boolean isPersistentPlaylistId(
@@ -6958,9 +7614,12 @@ public final class PinPlaylistPatch {
                 holderPrimitiveFields
         );
 
-        Long stableRowId = resolvedPosition >= 0
-                && resolvedPosition < stableIds.size()
-                ? stableIds.get(resolvedPosition)
+        int resolvedSourcePosition =
+                mappedSourcePosition(adapter, resolvedPosition);
+
+        Long stableRowId = resolvedSourcePosition >= 0
+                && resolvedSourcePosition < stableIds.size()
+                ? stableIds.get(resolvedSourcePosition)
                 : null;
 
         activeFlyoutAdapterPosition = resolvedPosition;
@@ -6968,6 +7627,22 @@ public final class PinPlaylistPatch {
         activeFlyoutRowView = directChild;
         activeLibraryAdapter = adapter;
         activeLibraryBackingList = items;
+
+        List<String> rowTexts = collectRowTextValues(directChild);
+        String rowSignature = buildRowIdentitySignature(rowTexts);
+        Context rowContext = directChild.getContext();
+
+        if (rowSignature != null) {
+            resolveBoundPlaylistId(rowSignature, playlistId);
+
+            if (rowContext != null) {
+                PinStore.setPlaylistSignature(
+                        rowContext,
+                        playlistId,
+                        rowSignature
+                );
+            }
+        }
 
         if (stableRowId != null) {
             rememberAdapterPlaylistId(
@@ -6991,6 +7666,7 @@ public final class PinPlaylistPatch {
                 + " holderFields=" + holderPrimitiveFields
                 + " stableIds=" + stableIds
                 + " resolvedPosition=" + resolvedPosition
+                + " resolvedSourcePosition=" + resolvedSourcePosition
                 + " stableRowId=" + stableRowId);
     }
 

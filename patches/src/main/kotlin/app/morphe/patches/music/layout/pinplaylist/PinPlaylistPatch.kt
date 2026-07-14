@@ -6,6 +6,7 @@ import app.morphe.patcher.methodCall
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.smali.ExternalLabel
 import app.seobject.patches.music.Compatibility.COMPATIBILITY_YOUTUBE_MUSIC
+import app.seobject.patches.music.settings.pinPlaylistSettingsResourcePatch
 import app.morphe.util.cloneMutable
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
@@ -99,6 +100,7 @@ val pinPlaylistPatch = bytecodePatch(
     description = "Stable YouTube Music 9.15.51 patch that replaces Speed Dial pinning with persistent Library playlist pinning.",
 ) {
     compatibleWith(COMPATIBILITY_YOUTUBE_MUSIC)
+    dependsOn(pinPlaylistSettingsResourcePatch)
     extendWith("extensions/music.mpe")
 
     execute {
@@ -553,6 +555,25 @@ val pinPlaylistPatch = bytecodePatch(
          */
         val libraryAdapterClass =
             PlaylistLithoAdapterBindFingerprint.classDef
+
+        /*
+         * 9.15.51 exposes the completed Litho row list through hvx before
+         * RecyclerView asks for the first view type or binds a holder. Install
+         * the pinned visual permutation from getItemCount(), so the very first
+         * Library frame is already in final order and needs no corrective
+         * post-bind refresh.
+         */
+        val libraryItemCountMethod =
+            libraryAdapterClass.methods.single {
+                it.returnType == "I" && it.parameters.isEmpty()
+            }
+
+        libraryItemCountMethod.addInstructionsWithLabels(
+            0,
+            """
+                invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->prepareStableLibraryAdapter(Ljava/lang/Object;)V
+            """
+        )
 
         val libraryViewTypeMethod =
             libraryAdapterClass.methods.single {

@@ -55,6 +55,7 @@ kotlin {
         kotlin.include(
             "app/morphe/patches/music/layout/pinplaylist/**",
             "app/seobject/patches/music/Compatibility.kt",
+            "app/seobject/patches/music/settings/**",
         )
     }
 

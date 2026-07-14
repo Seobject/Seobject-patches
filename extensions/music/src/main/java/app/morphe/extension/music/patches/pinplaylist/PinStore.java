@@ -238,12 +238,29 @@ public final class PinStore {
             return;
         }
 
-        prefs(context).edit()
-                .putString(
-                        KEY_SIGNATURE_PREFIX + playlistId,
-                        signature
-                )
-                .apply();
+        SharedPreferences preferences = prefs(context);
+        SharedPreferences.Editor editor = preferences.edit();
+
+        /* One visible row signature can belong to only one playlist. Remove
+         * stale collisions left by recycled holders before saving the exact
+         * ID captured from the active flyout. */
+        for (Map.Entry<String, ?> entry :
+                preferences.getAll().entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+
+            if (key != null
+                    && key.startsWith(KEY_SIGNATURE_PREFIX)
+                    && !key.equals(KEY_SIGNATURE_PREFIX + playlistId)
+                    && signature.equals(value)) {
+                editor.remove(key);
+            }
+        }
+
+        editor.putString(
+                KEY_SIGNATURE_PREFIX + playlistId,
+                signature
+        ).apply();
     }
 
     public static Map<String, String> getPlaylistSignatures(
