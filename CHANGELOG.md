@@ -1,3 +1,12 @@
+## [1.1.0-dev.2](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.1...v1.1.0-dev.2) (2026-07-14)
+
+### Bug Fixes
+
+* accept all declared dev presenter variants ([3fbdfc8](https://github.com/Seobject/Seobject-patches/commit/3fbdfc879eb4e53eba9e052ba86b484dedbc3577))
+* identify dev channel and derive flyout type ([31bd9ab](https://github.com/Seobject/Seobject-patches/commit/31bd9ab863f69a0dd1c3ef3e56e2522f9ba63cca))
+* make flyout menu runtime version-aware ([43ffda7](https://github.com/Seobject/Seobject-patches/commit/43ffda789f6ffea2e4de0c3b536fdd784b4ea374))
+* map stable library adapter and isolate bundle classes ([19eb352](https://github.com/Seobject/Seobject-patches/commit/19eb3527692ce8199912a8f06ea19ac21e2426ed))
+
 ## [1.1.0-dev.1](https://github.com/Seobject/Seobject-patches/compare/v1.0.3...v1.1.0-dev.1) (2026-07-14)
 
 ### Features
