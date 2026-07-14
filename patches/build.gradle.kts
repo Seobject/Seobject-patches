@@ -2,8 +2,8 @@ group = "app.morphe"
 
 patches {
     about {
-        name = "Seobjects Random Patches"
-        description = "Random QoL Patches"
+        name = "Seobjects Random Patches (Dev)"
+        description = "Random QoL Patches — dev channel for experimental YouTube Music versions"
         source = "git@github.com:Seobject/Seobject-patches.git"
         author = "Seobject"
         contact = "na"
