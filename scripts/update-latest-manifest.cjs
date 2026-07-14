@@ -1,3 +1,5 @@
+const { readFile } = require("node:fs/promises");
+
 const repository = process.env.GITHUB_REPOSITORY || "Seobject/Seobject-patches";
 const token = process.env.GITHUB_TOKEN;
 const targetPath = "seobjects-random-patches.json";
@@ -26,29 +28,38 @@ async function github(path, options = {}) {
 
 async function main() {
   const releases = await github(`/repos/${repository}/releases?per_page=100`);
-  const latest = releases
+  const latestRelease = releases
     .filter((release) => !release.draft && release.published_at)
     .sort((left, right) =>
       Date.parse(right.published_at) - Date.parse(left.published_at),
     )[0];
 
-  if (!latest) {
+  if (!latestRelease) {
     console.log("No published release found; combined feed unchanged");
     return;
   }
 
-  const asset = latest.assets.find((candidate) => candidate.name.endsWith(".mpp"));
+  const asset = latestRelease.assets.find((candidate) =>
+    candidate.name.endsWith(".mpp"),
+  );
   if (!asset) {
-    throw new Error(`Release ${latest.tag_name} has no .mpp asset`);
+    throw new Error(`Release ${latestRelease.tag_name} has no .mpp asset`);
   }
 
-  const manifest = {
-    created_at: latest.published_at.replace(/\.\d{3}Z$/, ""),
-    description: (latest.body || "").trim() || "Random QoL Patches",
+  const apiManifest = {
+    created_at: latestRelease.published_at.replace(/\.\d{3}Z$/, ""),
+    description: (latestRelease.body || "").trim() || "Random QoL Patches",
     download_url: asset.browser_download_url,
     signature_download_url: "N/A",
-    version: latest.tag_name,
+    version: latestRelease.tag_name,
   };
+  const branchManifest = JSON.parse(await readFile("patch-bundle.json", "utf8"));
+  const timestamp = (value) =>
+    Date.parse(value.endsWith("Z") ? value : `${value}Z`);
+  const manifest =
+    timestamp(branchManifest.created_at) > timestamp(apiManifest.created_at)
+      ? branchManifest
+      : apiManifest;
   const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
   const current = await github(
     `/repos/${repository}/contents/${targetPath}?ref=main`,
@@ -56,21 +67,21 @@ async function main() {
   const currentText = Buffer.from(current.content, "base64").toString("utf8");
 
   if (currentText === serialized) {
-    console.log(`Combined feed already points to ${latest.tag_name}`);
+    console.log(`Combined feed already points to ${manifest.version}`);
     return;
   }
 
   await github(`/repos/${repository}/contents/${targetPath}`, {
     method: "PUT",
     body: JSON.stringify({
-      message: `chore: update combined release feed to ${latest.tag_name} [skip ci]`,
+      message: `chore: update combined release feed to ${manifest.version} [skip ci]`,
       content: Buffer.from(serialized).toString("base64"),
       sha: current.sha,
       branch: "main",
     }),
   });
 
-  console.log(`Combined feed now points to ${latest.tag_name}`);
+  console.log(`Combined feed now points to ${manifest.version}`);
 }
 
 main().catch((error) => {
