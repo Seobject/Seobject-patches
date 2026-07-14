@@ -1,12 +1,14 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "patches": [
     {
       "name": "Pin playlists (stable)",
       "description": "Stable YouTube Music 9.15.51 patch that replaces Speed Dial pinning with persistent Library playlist pinning.",
       "default": true,
-      "dependencies": [],
+      "dependencies": [
+        "ResourcePatch"
+      ],
       "compatiblePackages": [
         {
           "packageName": "com.google.android.apps.youtube.music",
