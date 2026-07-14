@@ -20,7 +20,11 @@ async function github(path, options = {}) {
   });
 
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);
+    const error = new Error(
+      `${response.status} ${response.statusText}: ${await response.text()}`,
+    );
+    error.status = response.status;
+    throw error;
   }
 
   return response.status === 204 ? null : response.json();
@@ -61,27 +65,39 @@ async function main() {
       ? branchManifest
       : apiManifest;
   const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
-  const current = await github(
-    `/repos/${repository}/contents/${targetPath}?ref=main`,
-  );
-  const currentText = Buffer.from(current.content, "base64").toString("utf8");
 
-  if (currentText === serialized) {
-    console.log(`Combined feed already points to ${manifest.version}`);
-    return;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const current = await github(
+      `/repos/${repository}/contents/${targetPath}?ref=main`,
+    );
+    const currentText = Buffer.from(current.content, "base64").toString("utf8");
+
+    if (currentText === serialized) {
+      console.log(`Combined feed already points to ${manifest.version}`);
+      return;
+    }
+
+    try {
+      await github(`/repos/${repository}/contents/${targetPath}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          message: `chore: update combined release feed to ${manifest.version} [skip ci]`,
+          content: Buffer.from(serialized).toString("base64"),
+          sha: current.sha,
+          branch: "main",
+        }),
+      });
+
+      console.log(`Combined feed now points to ${manifest.version}`);
+      return;
+    } catch (error) {
+      if (error.status !== 409 || attempt === 3) {
+        throw error;
+      }
+
+      console.log(`Combined feed changed concurrently; retrying (${attempt}/3)`);
+    }
   }
-
-  await github(`/repos/${repository}/contents/${targetPath}`, {
-    method: "PUT",
-    body: JSON.stringify({
-      message: `chore: update combined release feed to ${manifest.version} [skip ci]`,
-      content: Buffer.from(serialized).toString("base64"),
-      sha: current.sha,
-      branch: "main",
-    }),
-  });
-
-  console.log(`Combined feed now points to ${manifest.version}`);
 }
 
 main().catch((error) => {
