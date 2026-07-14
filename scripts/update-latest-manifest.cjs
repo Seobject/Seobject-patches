@@ -43,11 +43,15 @@ async function main() {
     return;
   }
 
-  const asset = latestRelease.assets.find((candidate) =>
-    candidate.name.endsWith(".mpp"),
+  const expectedAssetName =
+    `patches-${latestRelease.tag_name.replace(/^v/, "")}.mpp`;
+  const asset = latestRelease.assets.find(
+    (candidate) => candidate.name === expectedAssetName,
   );
   if (!asset) {
-    throw new Error(`Release ${latestRelease.tag_name} has no .mpp asset`);
+    throw new Error(
+      `Release ${latestRelease.tag_name} has no ${expectedAssetName} asset`,
+    );
   }
 
   const apiManifest = {
