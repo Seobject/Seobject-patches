@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-07-14T19:44:58Z",
-  "description": "## [1.1.0-dev.3](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.2...v1.1.0-dev.3) (2026-07-14)\n\n### Bug Fixes\n\n* avoid version-specific menu presenter references ([91e2381](https://github.com/Seobject/Seobject-patches/commit/91e2381bccd9f6e0116b3965b61dbeadad98370b))",
-  "download_url": "https://github.com/Seobject/Seobject-patches/releases/download/v1.1.0-dev.3/patches-1.1.0-dev.2.mpp",
+  "created_at": "2026-07-14T20:34:25",
+  "description": "## [1.1.0-dev.4](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.3...v1.1.0-dev.4) (2026-07-14)\n\n### Bug Fixes\n\n* fail open for flyout hook errors ([84c0824](https://github.com/Seobject/Seobject-patches/commit/84c08246305be8281fa11aa9209cd7fa639510ed))",
+  "download_url": "https://github.com/Seobject/Seobject-patches/releases/download/v1.1.0-dev.4/patches-1.1.0-dev.4.mpp",
   "signature_download_url": "N/A",
-  "version": "v1.1.0-dev.3"
+  "version": "v1.1.0-dev.4"
 }
