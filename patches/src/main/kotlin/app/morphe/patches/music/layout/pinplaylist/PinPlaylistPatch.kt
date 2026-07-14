@@ -120,19 +120,28 @@ val pinPlaylistPatch = bytecodePatch(
         val parameterRegisterCount = 2
         val firstNewLocalRegister = originalRegisterCount - parameterRegisterCount
 
-        val patchedMethod = originalMethod.cloneMutable(additionalRegisters = 1)
+        val patchedMethod = originalMethod.cloneMutable(additionalRegisters = 3)
 
         menuItemPresenterClass.methods.apply {
             remove(originalMethod)
             add(patchedMethod)
         }
 
-        val handledRegister = firstNewLocalRegister
+        val viewRegister = firstNewLocalRegister
+        val presenterRegister = firstNewLocalRegister + 1
+        val handledRegister = firstNewLocalRegister + 2
 
+        /*
+         * onClick's parameters are p0 (presenter) then p1 (View), while the
+         * extension signature is (View, presenter). Copy them into contiguous
+         * locals in descriptor order so the range invoke remains verifier-safe.
+         */
         patchedMethod.addInstructionsWithLabels(
             0,
             """
-                invoke-static/range {p0 .. p1}, $EXTENSION_CLASS->handleClick(Landroid/view/View;Ljava/lang/Object;)Z
+                move-object/from16 v$viewRegister, p1
+                move-object/from16 v$presenterRegister, p0
+                invoke-static/range {v$viewRegister .. v$presenterRegister}, $EXTENSION_CLASS->handleClick(Landroid/view/View;Ljava/lang/Object;)Z
                 move-result v$handledRegister
                 if-eqz v$handledRegister, :pin_playlist_native_click
                 return-void
