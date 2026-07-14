@@ -37,7 +37,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v90-stable-library-adapter";
+    private static final String BUILD_ID = "v91-presenter-agnostic-click";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
             {"arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
@@ -1948,6 +1948,40 @@ public final class PinPlaylistPatch {
 
     /**
      * Hijacks only the existing Pin/Unpin Speed Dial rows.
+     */
+    public static boolean handleClick(
+            @Nullable View clickedView,
+            @Nullable Object presenter
+    ) {
+        try {
+            Object menuItem = findPresenterMenuItem(presenter);
+            Object iconMessage = invokeStaticByNames(
+                    MENU_ITEM_HELPER_CLASSES,
+                    "d",
+                    menuItem
+            );
+            Object iconNumber = readFieldByName(iconMessage, "c");
+            Object icon = invokeStaticByNames(
+                    ICON_ENUM_CLASSES,
+                    "a",
+                    iconNumber
+            );
+
+            return icon instanceof Enum<?>
+                    && handleClick(
+                    clickedView,
+                    (Enum<?>) icon,
+                    presenter,
+                    menuItem
+            );
+        } catch (Throwable error) {
+            Log.e(TAG, "Failed resolving menu click", error);
+            return false;
+        }
+    }
+
+    /**
+     * Performs the pin action after the presenter-specific click data is resolved.
      */
     public static boolean handleClick(
             @Nullable View clickedView,

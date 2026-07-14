@@ -108,11 +108,6 @@ val pinPlaylistPatch = bytecodePatch(
         val menuItemPresenterClass =
             PlaylistMenuItemPresenterClassFingerprint.classDef
 
-        check(menuItemPresenterClass.type != "Lqks;") {
-            "The dev Pin playlists bundle supports only YouTube Music 9.24.51, " +
-                "9.25.50, and 9.26.51. Use Seobjects Random Patches (Stable) for 9.15.51."
-        }
-
         val originalMethod = menuItemPresenterClass.methods.single { method ->
             method.name == "onClick" &&
                 method.returnType == "V" &&
@@ -125,45 +120,21 @@ val pinPlaylistPatch = bytecodePatch(
         val parameterRegisterCount = 2
         val firstNewLocalRegister = originalRegisterCount - parameterRegisterCount
 
-        val patchedMethod = originalMethod.cloneMutable(additionalRegisters = 2)
+        val patchedMethod = originalMethod.cloneMutable(additionalRegisters = 1)
 
         menuItemPresenterClass.methods.apply {
             remove(originalMethod)
             add(patchedMethod)
         }
 
-        val tempRegister = firstNewLocalRegister
-        val handledRegister = firstNewLocalRegister + 1
+        val handledRegister = firstNewLocalRegister
 
         patchedMethod.addInstructionsWithLabels(
             0,
             """
-                iget-object v$tempRegister, p0, Lqup;->c:Lbwyn;
-                if-eqz v$tempRegister, :pin_playlist_native_click
-
-                invoke-static {v$tempRegister}, Larbe;->d(Lbwyn;)Lbtcx;
-                move-result-object v$tempRegister
-                if-eqz v$tempRegister, :pin_playlist_native_click
-
-                iget v$tempRegister, v$tempRegister, Lbtcx;->c:I
-                invoke-static {v$tempRegister}, Lbtcw;->a(I)Lbtcw;
-                move-result-object v$tempRegister
-
-                iget-object v$handledRegister, p0, Lqup;->c:Lbwyn;
-
-                invoke-static {p1, v$tempRegister, p0, v$handledRegister}, $EXTENSION_CLASS->handleClick(Landroid/view/View;Ljava/lang/Enum;Ljava/lang/Object;Ljava/lang/Object;)Z
+                invoke-static/range {p0 .. p1}, $EXTENSION_CLASS->handleClick(Landroid/view/View;Ljava/lang/Object;)Z
                 move-result v$handledRegister
                 if-eqz v$handledRegister, :pin_playlist_native_click
-
-                # Close the flyout through the stock path without dispatching the
-                # original Speed Dial endpoint.
-                iget-object v$tempRegister, p0, Lqup;->t:Lqui;
-                iget-object v$tempRegister, v$tempRegister, Lqui;->a:Lqup;
-                iget-object v$tempRegister, v$tempRegister, Lqup;->b:Lcmxx;
-                invoke-interface {v$tempRegister}, Lcmxx;->ht()Ljava/lang/Object;
-                move-result-object v$tempRegister
-                check-cast v$tempRegister, Lbffz;
-                invoke-interface {v$tempRegister}, Lbffz;->i()V
                 return-void
             """,
             ExternalLabel(
