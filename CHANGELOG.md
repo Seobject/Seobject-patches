@@ -1,3 +1,9 @@
+## [1.0.5](https://github.com/Seobject/Seobject-patches/compare/v1.0.4...v1.0.5) (2026-07-14)
+
+### Bug Fixes
+
+* clean stable bundle display metadata ([68676af](https://github.com/Seobject/Seobject-patches/commit/68676af9b76e8054f10568694cd5396fd92def16))
+
 ## [1.0.4](https://github.com/Seobject/Seobject-patches/compare/v1.0.3...v1.0.4) (2026-07-14)
 
 ### Bug Fixes
