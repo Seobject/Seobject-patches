@@ -5,11 +5,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLa
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.smali.ExternalLabel
-import app.morphe.patches.music.misc.extension.sharedExtensionPatch
-import app.morphe.patches.music.misc.settings.settingsPatch
-import app.morphe.patches.music.misc.settings.PreferenceScreen
 import app.morphe.patches.music.shared.Constants.COMPATIBILITY_YOUTUBE_MUSIC
-import app.morphe.patches.shared.misc.settings.preference.SwitchPreference
 import app.morphe.util.cloneMutable
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
@@ -29,26 +25,18 @@ private const val EXTENSION_CLASS =
  * Larzp. We intercept at the beginning, identify the current menu item by its icon
  * enum, and consume only Pin/Unpin Speed Dial clicks.
  */
-internal object PlaylistMenuItemClickFingerprint : Fingerprint(
-    returnType = "V",
-    parameters = listOf("Landroid/view/View;"),
-    filters = listOf(
-        methodCall("Larbe;->c(Lbwyn;)Lbqco;"),
-        methodCall("Larbe;->b(Lbwyn;)Lbqco;"),
-        methodCall("Larzp;->c(Lbqco;Ljava/util/Map;)V"),
+internal object PlaylistMenuItemPresenterClassFingerprint : Fingerprint(
+    strings = listOf(
+        "com/google/android/apps/youtube/music/ui/presenter/MenuItemPresenter"
     ),
-)
-
-internal object PlaylistMenuItemBindFingerprint : Fingerprint(
-    returnType = "V",
-    parameters = emptyList(),
-    filters = listOf(
-        methodCall("Lqpg;->b(Lbwzj;)Z"),
-        methodCall("Larbe;->e(Lbwyn;)Ljava/lang/CharSequence;"),
-        methodCall(
-            "Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V"
-        ),
-    ),
+    custom = { _, classDef ->
+        classDef.methods.any { method ->
+            method.name == "onClick" &&
+                method.returnType == "V" &&
+                method.parameters.map { parameter -> parameter.type } ==
+                listOf("Landroid/view/View;")
+        }
+    },
 )
 
 /**
@@ -56,16 +44,22 @@ internal object PlaylistMenuItemBindFingerprint : Fingerprint(
  */
 internal object PlaylistLithoAdapterBindFingerprint : Fingerprint(
     returnType = "V",
-    parameters = listOf(
-        "Lvt;",
-        "I",
-    ),
     filters = listOf(
-        methodCall("Lhvg;->d()Lhzq;"),
-        methodCall("Lhzc;->q(Lhvg;)I"),
-        methodCall("Lhzc;->p(Lhvg;)I"),
-        methodCall("Lhvg;->b()Lcom/facebook/litho/ComponentTree;"),
+        methodCall(
+            definingClass = "Ljava/util/List;",
+            name = "get",
+            parameters = listOf("I"),
+            returnType = "Ljava/lang/Object;",
+        ),
+        methodCall(
+            parameters = emptyList(),
+            returnType = "Lcom/facebook/litho/ComponentTree;",
+        ),
     ),
+    custom = { method, _ ->
+        method.parameters.size == 2 &&
+            method.parameters[1].type == "I"
+    },
 )
 
 /**
@@ -73,10 +67,13 @@ internal object PlaylistLithoAdapterBindFingerprint : Fingerprint(
  * AdapterProxyRenderInfo (hyi).
  */
 internal object PlaylistAdapterProxyRenderInfoFingerprint : Fingerprint(
-    returnType = "Lhzq;",
     parameters = listOf("I"),
     filters = listOf(
-        methodCall("Lhyi;-><init>(Lhut;)V"),
+        methodCall(
+            name = "getItem",
+            parameters = listOf("I"),
+            returnType = "Ljava/lang/Object;",
+        ),
     ),
 )
 
@@ -87,45 +84,36 @@ internal object PlaylistAdapterProxyRenderInfoFingerprint : Fingerprint(
  */
 internal object PlaylistFlyoutSourceFingerprint : Fingerprint(
     returnType = "V",
-    parameters = listOf(
-        "Lbwyr;",
-        "Ljava/lang/Object;",
-        "Lqpg;",
-        "Laryl;",
-    ),
-    filters = listOf(
-        methodCall("Lbfge;->a(Lbwyr;Ljava/lang/Object;)Ljava/util/List;"),
-        methodCall("Lqpc;->h(Lfu;Ljava/lang/String;)V"),
-    ),
+    strings = listOf("MUSIC_MENU_BOTTOM_SHEET_FRAGMENT_TAG"),
+    custom = { method, _ ->
+        method.parameters.size == 4 &&
+            method.parameters[1].type == "Ljava/lang/Object;" &&
+            method.parameters.none { parameter ->
+                parameter.type == "Landroid/view/View;"
+            }
+    },
 )
 
 val pinPlaylistPatch = bytecodePatch(
     name = "Pin playlists",
     description = "Replaces Speed Dial pinning with persistent Library playlist pinning.",
 ) {
-    dependsOn(
-        sharedExtensionPatch,
-        settingsPatch,
-    )
-
     compatibleWith(COMPATIBILITY_YOUTUBE_MUSIC)
+    extendWith("extensions/music.mpe")
 
     execute {
-        PreferenceScreen.GENERAL.addPreferences(
-            SwitchPreference(
-                key = "morphe_music_replace_pin_to_speed_dial",
-                summary = true
-            ),
-            SwitchPreference(
-                key = "morphe_music_pin_playlist_separate_menu_item",
-                summary = true
-            )
-        )
-
         /*
          * Part 1: intercept the existing Pin/Unpin Speed Dial flyout action.
          */
-        val originalMethod = PlaylistMenuItemClickFingerprint.method
+        val menuItemPresenterClass =
+            PlaylistMenuItemPresenterClassFingerprint.classDef
+
+        val originalMethod = menuItemPresenterClass.methods.single { method ->
+            method.name == "onClick" &&
+                method.returnType == "V" &&
+                method.parameters.map { parameter -> parameter.type } ==
+                listOf("Landroid/view/View;")
+        }
         val originalRegisterCount = originalMethod.implementation!!.registerCount
 
         // onClick(View) has two parameter registers: p0 and p1.
@@ -134,7 +122,7 @@ val pinPlaylistPatch = bytecodePatch(
 
         val patchedMethod = originalMethod.cloneMutable(additionalRegisters = 2)
 
-        PlaylistMenuItemClickFingerprint.classDef.methods.apply {
+        menuItemPresenterClass.methods.apply {
             remove(originalMethod)
             add(patchedMethod)
         }
@@ -145,18 +133,18 @@ val pinPlaylistPatch = bytecodePatch(
         patchedMethod.addInstructionsWithLabels(
             0,
             """
-                iget-object v$tempRegister, p0, Lqup;->c:Lbwyn;
+                iget-object v$tempRegister, p0, Lqks;->c:Lbuzr;
                 if-eqz v$tempRegister, :pin_playlist_native_click
 
-                invoke-static {v$tempRegister}, Larbe;->d(Lbwyn;)Lbtcx;
+                invoke-static {v$tempRegister}, Laqft;->d(Lbuzr;)Lbrga;
                 move-result-object v$tempRegister
                 if-eqz v$tempRegister, :pin_playlist_native_click
 
-                iget v$tempRegister, v$tempRegister, Lbtcx;->c:I
-                invoke-static {v$tempRegister}, Lbtcw;->a(I)Lbtcw;
+                iget v$tempRegister, v$tempRegister, Lbrga;->c:I
+                invoke-static {v$tempRegister}, Lbrfz;->a(I)Lbrfz;
                 move-result-object v$tempRegister
 
-                iget-object v$handledRegister, p0, Lqup;->c:Lbwyn;
+                iget-object v$handledRegister, p0, Lqks;->c:Lbuzr;
 
                 invoke-static {p1, v$tempRegister, p0, v$handledRegister}, $EXTENSION_CLASS->handleClick(Landroid/view/View;Ljava/lang/Enum;Ljava/lang/Object;Ljava/lang/Object;)Z
                 move-result v$handledRegister
@@ -164,13 +152,13 @@ val pinPlaylistPatch = bytecodePatch(
 
                 # Close the flyout through the stock path without dispatching the
                 # original Speed Dial endpoint.
-                iget-object v$tempRegister, p0, Lqup;->t:Lqui;
-                iget-object v$tempRegister, v$tempRegister, Lqui;->a:Lqup;
-                iget-object v$tempRegister, v$tempRegister, Lqup;->b:Lcmxx;
-                invoke-interface {v$tempRegister}, Lcmxx;->ht()Ljava/lang/Object;
+                iget-object v$tempRegister, p0, Lqks;->t:Lqkl;
+                iget-object v$tempRegister, v$tempRegister, Lqkl;->a:Lqks;
+                iget-object v$tempRegister, v$tempRegister, Lqks;->b:Lckoh;
+                invoke-interface {v$tempRegister}, Lckoh;->gG()Ljava/lang/Object;
                 move-result-object v$tempRegister
-                check-cast v$tempRegister, Lbffz;
-                invoke-interface {v$tempRegister}, Lbffz;->i()V
+                check-cast v$tempRegister, Lbdvs;
+                invoke-interface {v$tempRegister}, Lbdvs;->i()V
                 return-void
             """,
             ExternalLabel(
@@ -188,7 +176,23 @@ val pinPlaylistPatch = bytecodePatch(
          * already synchronized.
          */
         val menuItemBindMethod =
-            PlaylistMenuItemBindFingerprint.method
+            menuItemPresenterClass.methods.single { method ->
+                method.returnType == "V" &&
+                    method.parameters.isEmpty() &&
+                    method.implementation?.instructions?.any { instruction ->
+                        val reference =
+                            (instruction as? ReferenceInstruction)
+                                ?.reference as? MethodReference
+
+                        reference?.definingClass ==
+                            "Landroid/widget/TextView;" &&
+                            reference.name == "setText" &&
+                            reference.returnType == "V" &&
+                            reference.parameterTypes
+                                .map { it.toString() } ==
+                            listOf("Ljava/lang/CharSequence;")
+                    } == true
+            }
 
         val bindInstructions =
             menuItemBindMethod.implementation!!.instructions
@@ -200,12 +204,12 @@ val pinPlaylistPatch = bytecodePatch(
                         ?.reference as? MethodReference
                         ?: return@first false
 
-                reference.definingClass == "Lqpg;" &&
+                reference.definingClass == "Lqfj;" &&
                     reference.name == "b" &&
                     reference.returnType == "Z" &&
                     reference.parameterTypes
                         .map { it.toString() } ==
-                    listOf("Lbwzj;")
+                    listOf("Lbvan;")
             }.index
 
         check(
@@ -316,8 +320,7 @@ val pinPlaylistPatch = bytecodePatch(
                             as? MethodReference
                             ?: return@first false
 
-                    reference.definingClass == "Lbewt;" &&
-                        reference.name == "getItem" &&
+                    reference.name == "getItem" &&
                         reference.returnType ==
                         "Ljava/lang/Object;" &&
                         reference.parameterTypes
@@ -374,6 +377,42 @@ val pinPlaylistPatch = bytecodePatch(
         val adapterProxyClass =
             PlaylistAdapterProxyRenderInfoFingerprint.classDef
 
+        val libraryControllerCandidates =
+            PlaylistLithoAdapterBindFingerprint.originalMethod
+                .implementation!!.instructions
+                .mapNotNull { instruction ->
+                    (instruction as? ReferenceInstruction)
+                        ?.reference as? MethodReference
+                }
+                .filter { reference ->
+                    reference.returnType == "I" &&
+                        reference.parameterTypes.size == 1 &&
+                        reference.parameterTypes[0].toString()
+                            .startsWith("L")
+                }
+                .groupBy { reference ->
+                    Pair(
+                        reference.definingClass,
+                        reference.parameterTypes[0].toString(),
+                    )
+                }
+                .entries.filter { entry ->
+                    entry.value.map { reference -> reference.name }
+                        .distinct().size >= 2
+                }
+
+        check(libraryControllerCandidates.size == 1) {
+            "Expected one Library controller call group, found " +
+                libraryControllerCandidates.map { entry ->
+                    entry.key to entry.value.map { reference ->
+                        reference.name
+                    }
+                }
+        }
+
+        val libraryControllerType =
+            libraryControllerCandidates.single().key.first
+
         adapterProxyClass.methods
             .filter { method ->
                 method.implementation != null &&
@@ -395,9 +434,11 @@ val pinPlaylistPatch = bytecodePatch(
                                 as? MethodReference
                                 ?: return@any false
 
-                        reference.definingClass == "Lbfrh;" &&
-                            reference.name == "h" &&
-                            reference.returnType == "Lhzq;" &&
+                        reference.definingClass ==
+                            renderInfoFactory.definingClass &&
+                            reference.name == renderInfoFactory.name &&
+                            reference.returnType ==
+                            renderInfoFactory.returnType &&
                             reference.parameterTypes
                                 .map { it.toString() } ==
                             listOf("I")
@@ -419,7 +460,8 @@ val pinPlaylistPatch = bytecodePatch(
                                     as? MethodReference
                                     ?: return@mapNotNull null
 
-                            if (reference.definingClass != "Lhzc;") {
+                            if (reference.definingClass !=
+                                libraryControllerType) {
                                 return@mapNotNull null
                             }
 
@@ -509,8 +551,7 @@ val pinPlaylistPatch = bytecodePatch(
 
         val libraryViewTypeMethod =
             libraryAdapterClass.methods.single {
-                it.name == "b" &&
-                    it.returnType == "I" &&
+                it.returnType == "I" &&
                     it.parameters.map { parameter ->
                         parameter.type
                     } == listOf("I")
@@ -527,8 +568,7 @@ val pinPlaylistPatch = bytecodePatch(
 
         val libraryStableIdMethod =
             libraryAdapterClass.methods.single {
-                it.name == "iv" &&
-                    it.returnType == "J" &&
+                it.returnType == "J" &&
                     it.parameters.map { parameter ->
                         parameter.type
                     } == listOf("I")
@@ -584,16 +624,33 @@ val pinPlaylistPatch = bytecodePatch(
          * View and the byhm source object. Resolve qot.k directly from qot.j's
          * matched class so no separate global fingerprint is required.
          */
-        val flyoutViewMethod = PlaylistFlyoutSourceFingerprint.classDef.methods.single {
-            it.name == "k" &&
+        val flyoutSourceMethod = PlaylistFlyoutSourceFingerprint.method
+        val flyoutSourceParameterTypes =
+            flyoutSourceMethod.parameters.map { parameter -> parameter.type }
+
+        val flyoutViewCandidates =
+            PlaylistFlyoutSourceFingerprint.classDef.methods.filter {
                 it.returnType == "V" &&
-                it.parameters.map { parameter -> parameter.type } == listOf(
-                    "Lbwyr;",
-                    "Landroid/view/View;",
-                    "Ljava/lang/Object;",
-                    "Laryl;",
-                )
+                    it.parameters.map { parameter -> parameter.type } ==
+                    listOf(
+                        flyoutSourceParameterTypes[0],
+                        "Landroid/view/View;",
+                        "Ljava/lang/Object;",
+                        flyoutSourceParameterTypes[3],
+                    )
+            }
+
+        check(flyoutViewCandidates.size == 1) {
+            "Expected one paired flyout View method for " +
+                flyoutSourceParameterTypes +
+                ", found " + flyoutViewCandidates.map { method ->
+                    method.name to method.parameters.map { parameter ->
+                        parameter.type
+                    }
+                }
         }
+
+        val flyoutViewMethod = flyoutViewCandidates.single()
 
         flyoutViewMethod.addInstructionsWithLabels(
             0,
@@ -607,7 +664,7 @@ val pinPlaylistPatch = bytecodePatch(
          * a detached copy downstream when the optional row is injected. This
          * keeps qot.j's original bwyr protobuf safe for later reopenings.
          */
-        PlaylistFlyoutSourceFingerprint.method.addInstructionsWithLabels(
+        flyoutSourceMethod.addInstructionsWithLabels(
             0,
             """
                 invoke-static {p1, p2, p3}, $EXTENSION_CLASS->captureFlyoutSource(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V

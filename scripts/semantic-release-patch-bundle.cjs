@@ -3,7 +3,7 @@ const { readFile, writeFile } = require("node:fs/promises");
 const repository = "Seobject/Seobject-patches";
 
 module.exports = {
-  async prepare(_pluginConfig, { nextRelease, logger }) {
+  async prepare(_pluginConfig, { branch, nextRelease, logger }) {
     const version = nextRelease.version;
     const tag = `v${version}`;
     const filename = `patches-${version}.mpp`;
@@ -19,9 +19,21 @@ module.exports = {
       version: tag,
     };
 
+    const channel = branch.name === "main" ? "stable" : "dev";
+    const manifestFiles = [
+      "patch-bundle.json",
+      `seobjects-random-patches-${channel}.json`,
+    ];
+
+    // The main-branch canonical URL is also the permanent combined feed.
+    // A post-release workflow step updates it after dev releases.
+    if (channel === "stable") {
+      manifestFiles.push("seobjects-random-patches.json");
+    }
+
     const serializedManifest = `${JSON.stringify(manifest, null, 2)}\n`;
     await Promise.all(
-      ["patch-bundle.json", "seobjects-random-patches.json"].map((file) =>
+      manifestFiles.map((file) =>
         writeFile(file, serializedManifest, "utf8"),
       ),
     );
@@ -34,6 +46,6 @@ module.exports = {
       "utf8",
     );
 
-    logger.log(`Updated patch bundle metadata for ${tag}`);
+    logger.log(`Updated ${channel} patch bundle metadata for ${tag}`);
   },
 };

@@ -2598,16 +2598,12 @@ public final class PinPlaylistPatch {
                 enabled = lastFeatureEnabledState;
 
                 if (enabled == null) {
-                    try {
-                        enabled = PinPlaylistSettings.ENABLED.get();
-                    } catch (Throwable error) {
-                        enabled = true;
-                    }
+                    enabled = true;
 
                     /*
-                     * Restart-required: freeze this value for the complete app
-                     * process. Morphe persists setting changes and the next
-                     * process reads the new value.
+                     * Selecting the patch is the feature toggle. Keep the
+                     * runtime extension independent of Morphe's settings
+                     * bundle so both patch bundles can be applied together.
                      */
                     lastFeatureEnabledState = enabled;
 
@@ -2661,12 +2657,7 @@ public final class PinPlaylistPatch {
             enabled = lastSeparateMenuItemEnabledState;
             if (enabled != null) return enabled;
 
-            try {
-                enabled =
-                        PinPlaylistSettings.SEPARATE_MENU_ITEM.get();
-            } catch (Throwable error) {
-                enabled = true;
-            }
+            enabled = true;
 
             lastSeparateMenuItemEnabledState = enabled;
 

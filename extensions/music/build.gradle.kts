@@ -22,9 +22,6 @@ afterEvaluate {
                 include(
                     "app/morphe/extension/music/patches/pinplaylist/PinPlaylistPatch.java",
                     "app/morphe/extension/music/patches/pinplaylist/PinStore.java",
-                    "app/morphe/extension/music/patches/pinplaylist/PinPlaylistSettings.java",
-                    "app/morphe/extension/music/settings/MusicActivityHook.java",
-                    "app/morphe/extension/music/settings/preference/MusicPreferenceFragment.java",
                 )
             }
         )
