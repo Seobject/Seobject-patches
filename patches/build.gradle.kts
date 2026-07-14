@@ -54,18 +54,7 @@ kotlin {
         kotlin.setSrcDirs(listOf("src/main/kotlin"))
         kotlin.include(
             "app/morphe/patches/music/layout/pinplaylist/**",
-            "app/morphe/patches/music/misc/extension/**",
-            "app/morphe/patches/music/misc/gms/Constants.kt",
-            "app/morphe/patches/music/misc/settings/SettingsPatch.kt",
-            "app/morphe/patches/music/shared/**",
-            "app/morphe/patches/all/misc/resources/AddResourcesPatch.kt",
-            "app/morphe/patches/shared/GoogleApiActivityFingerprint.kt",
-            "app/morphe/patches/shared/layout/branding/AddBrandLicensePatch.kt",
-            "app/morphe/patches/shared/misc/initialization/**",
-            "app/morphe/patches/shared/misc/settings/**",
-            "app/morphe/patches/util/**",
-            "app/morphe/patches/youtube/misc/settings/ModifyActivityForSettingsInjection.kt",
-            "app/morphe/util/**",
+            "app/seobject/patches/music/Compatibility.kt",
         )
     }
 
