@@ -1,3 +1,9 @@
+## [1.0.2](https://github.com/Seobject/Seobject-patches/compare/v1.0.1...v1.0.2) (2026-07-14)
+
+### Bug Fixes
+
+* add canonical manager bundle endpoint ([d6dfb5f](https://github.com/Seobject/Seobject-patches/commit/d6dfb5f976a67fc64b7279631f8b4be704e3f672))
+
 ## [1.0.1](https://github.com/Seobject/Seobject-patches/compare/v1.0.0...v1.0.1) (2026-07-14)
 
 ### Bug Fixes
