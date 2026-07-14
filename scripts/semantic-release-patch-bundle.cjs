@@ -19,10 +19,11 @@ module.exports = {
       version: tag,
     };
 
-    await writeFile(
-      "patch-bundle.json",
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      "utf8",
+    const serializedManifest = `${JSON.stringify(manifest, null, 2)}\n`;
+    await Promise.all(
+      ["patch-bundle.json", "seobjects-random-patches.json"].map((file) =>
+        writeFile(file, serializedManifest, "utf8"),
+      ),
     );
 
     const patchList = JSON.parse(await readFile("patches-list.json", "utf8"));

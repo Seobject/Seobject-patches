@@ -26,7 +26,7 @@ Random QoL patches for YouTube Music.
 
 ## Universal ReVanced Manager
 
-Import the [patch bundle manifest](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/patch-bundle.json) to add this bundle to Universal ReVanced Manager.
+Import the [patch bundle manifest](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/seobjects-random-patches.json) to add this bundle to Universal ReVanced Manager.
 
 ## 📜 License
 
