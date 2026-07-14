@@ -1,3 +1,9 @@
+## [1.1.0-dev.5](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.4...v1.1.0-dev.5) (2026-07-14)
+
+### Bug Fixes
+
+* preserve onClick argument order ([d761c95](https://github.com/Seobject/Seobject-patches/commit/d761c95909f33e4c37af8e794d877d0f6c5e5414))
+
 ## [1.1.0-dev.4](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.3...v1.1.0-dev.4) (2026-07-14)
 
 ### Bug Fixes
