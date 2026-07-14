@@ -37,7 +37,13 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v88-pin-only-bundle1";
+    private static final String BUILD_ID = "v89-version-aware-menu";
+    private static final String[] MENU_ITEM_HELPER_CLASSES =
+            {"arbe", "aqft"};
+    private static final String[] ICON_ENUM_CLASSES =
+            {"btcw", "brfz"};
+    private static final String[] TEXT_HELPER_CLASSES =
+            {"bcow", "bbjy"};
     private static final String MENU_TITLE_PIN =
             "Pin playlist to Library";
     private static final String MENU_TITLE_UNPIN =
@@ -512,8 +518,8 @@ public final class PinPlaylistPatch {
 
                 if (!itemIds.isEmpty()) {
                     Object title =
-                            invokeStaticByName(
-                                    "arbe",
+                            invokeStaticByNames(
+                                    MENU_ITEM_HELPER_CLASSES,
                                     "e",
                                     menuItem
                             );
@@ -908,15 +914,6 @@ public final class PinPlaylistPatch {
                 }
             }
 
-            if (speedDialIndex < 0) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
-                        + " reason=noSpeedDialRow"
-                        + " itemCount=" + mutableItems.size()
-                        + " removedExistingRows="
-                        + removedExistingRows);
-                return flyoutMenu;
-            }
-
             Context context = resolveApplicationContext();
             boolean pinned =
                     context != null
@@ -930,15 +927,44 @@ public final class PinPlaylistPatch {
                     ? MENU_TITLE_UNPIN
                     : MENU_TITLE_PIN;
 
-            Object sourceItem =
-                    mutableItems.get(speedDialIndex);
+            int cloneSourceIndex = speedDialIndex;
+            Object clonedItem = null;
 
-            Object clonedItem =
-                    cloneLibraryPinMenuItem(
-                            sourceItem,
+            if (cloneSourceIndex >= 0) {
+                clonedItem = cloneLibraryPinMenuItem(
+                        mutableItems.get(cloneSourceIndex),
+                        title,
+                        pinned
+                );
+            } else {
+                /*
+                 * Some accounts or flyout-filter settings omit Speed Dial.
+                 * Any native row using the same menu presenter is a safe
+                 * visual template: the cloned command is never dispatched,
+                 * because handleClick consumes the injected row by identity
+                 * and by its rewritten pin icon/title.
+                 */
+                for (int index = 0;
+                     index < mutableItems.size();
+                     index++) {
+                    Object candidate = mutableItems.get(index);
+
+                    if (isInjectedLibraryPinMenuItem(candidate)) {
+                        continue;
+                    }
+
+                    clonedItem = cloneLibraryPinMenuItem(
+                            candidate,
                             title,
                             pinned
                     );
+
+                    if (clonedItem != null) {
+                        cloneSourceIndex = index;
+                        break;
+                    }
+                }
+            }
 
             if (clonedItem == null) {
                 Log.d(TAG, "SeparatePinMenuRow skipped"
@@ -950,7 +976,7 @@ public final class PinPlaylistPatch {
 
             int insertionIndex =
                     Math.min(
-                            speedDialIndex + 1,
+                            cloneSourceIndex + 1,
                             mutableItems.size()
                     );
 
@@ -980,6 +1006,10 @@ public final class PinPlaylistPatch {
                     + (removedExistingRows > 0)
                     + " removedExistingRows="
                     + removedExistingRows
+                    + " template="
+                    + (speedDialIndex >= 0
+                    ? "speedDial"
+                    : "fallback")
                     + " insertionIndex=" + insertionIndex
                     + " pinned=" + pinned
                     + " playlistId=" + playlistId
@@ -999,8 +1029,8 @@ public final class PinPlaylistPatch {
 
         try {
             Object iconMessage =
-                    invokeStaticByName(
-                            "arbe",
+                    invokeStaticByNames(
+                            MENU_ITEM_HELPER_CLASSES,
                             "d",
                             menuItem
                     );
@@ -1016,8 +1046,8 @@ public final class PinPlaylistPatch {
             }
 
             Object iconEnum =
-                    invokeStaticByName(
-                            "btcw",
+                    invokeStaticByNames(
+                            ICON_ENUM_CLASSES,
                             "a",
                             iconNumberObject
                     );
@@ -1054,8 +1084,8 @@ public final class PinPlaylistPatch {
          * title is therefore a safe structural fallback for click routing.
          */
         Object resolvedTitle =
-                invokeStaticByName(
-                        "arbe",
+                invokeStaticByNames(
+                        MENU_ITEM_HELPER_CLASSES,
                         "e",
                         menuItem
                 );
@@ -1116,14 +1146,19 @@ public final class PinPlaylistPatch {
                 : nativeState;
     }
 
-    private static boolean hasSimpleClassName(
+    private static boolean hasAnySimpleClassName(
             @Nullable Object value,
-            String expected
+            String... expectedNames
     ) {
-        return value != null
-                && expected.equals(
-                value.getClass().getSimpleName()
-        );
+        if (value == null) return false;
+
+        String actual = value.getClass().getSimpleName();
+
+        for (String expected : expectedNames) {
+            if (expected.equals(actual)) return true;
+        }
+
+        return false;
     }
 
     @Nullable
@@ -1138,7 +1173,7 @@ public final class PinPlaylistPatch {
                         "c"
                 );
 
-        if (hasSimpleClassName(direct, "bwyn")) {
+        if (hasAnySimpleClassName(direct, "bwyn", "buzr")) {
             return direct;
         }
 
@@ -1157,7 +1192,7 @@ public final class PinPlaylistPatch {
                 field.setAccessible(true);
                 Object value = field.get(presenter);
 
-                if (hasSimpleClassName(value, "bwyn")) {
+                if (hasAnySimpleClassName(value, "bwyn", "buzr")) {
                     return value;
                 }
             } catch (Throwable ignored) {
@@ -1175,15 +1210,15 @@ public final class PinPlaylistPatch {
             boolean pinned
     ) {
         Object resolvedTitle =
-                invokeStaticByName(
-                        "arbe",
+                invokeStaticByNames(
+                        MENU_ITEM_HELPER_CLASSES,
                         "e",
                         sourceItem
                 );
 
         Object resolvedIcon =
-                invokeStaticByName(
-                        "arbe",
+                invokeStaticByNames(
+                        MENU_ITEM_HELPER_CLASSES,
                         "d",
                         sourceItem
                 );
@@ -1540,7 +1575,8 @@ public final class PinPlaylistPatch {
             String typeName =
                     value.getClass().getSimpleName();
 
-            if (typeName.equals("bsmc")) {
+            if (typeName.equals("bsmc")
+                    || typeName.equals("bqph")) {
                 if (firstTitleField == null) {
                     firstTitleField = field;
                 }
@@ -1552,7 +1588,8 @@ public final class PinPlaylistPatch {
                         && resolvedTitle.equals(rendered)) {
                     exactTitleField = field;
                 }
-            } else if (typeName.equals("btcx")) {
+            } else if (typeName.equals("btcx")
+                    || typeName.equals("brga")) {
                 if (firstIconField == null) {
                     firstIconField = field;
                 }
@@ -1567,7 +1604,8 @@ public final class PinPlaylistPatch {
                         && resolvedIconNumber.equals(iconNumber)) {
                     exactIconField = field;
                 }
-            } else if (typeName.equals("bqco")) {
+            } else if (typeName.equals("bqco")
+                    || typeName.equals("boht")) {
                 commandCount++;
             }
         }
@@ -1658,8 +1696,8 @@ public final class PinPlaylistPatch {
             Object textMessage
     ) {
         Object rendered =
-                invokeStaticByName(
-                        "bcow",
+                invokeStaticByNames(
+                        TEXT_HELPER_CLASSES,
                         "b",
                         textMessage
                 );
@@ -1720,8 +1758,8 @@ public final class PinPlaylistPatch {
             String text
     ) {
         Object message =
-                invokeStaticByName(
-                        "bcow",
+                invokeStaticByNames(
+                        TEXT_HELPER_CLASSES,
                         "f",
                         text
                 );
@@ -1729,7 +1767,7 @@ public final class PinPlaylistPatch {
         if (message == null) {
             Log.d(TAG, "SeparatePinClone"
                     + " success=false"
-                    + " stage=bcowTextFactory"
+                    + " stage=textFactory"
                     + " text=" + text);
         }
 
@@ -1749,18 +1787,20 @@ public final class PinPlaylistPatch {
         }
 
         try {
-            Class<?> enumClass =
-                    Class.forName("btcw");
-
-            @SuppressWarnings("unchecked")
             Object iconEnum =
-                    Enum.valueOf(
-                            (Class<? extends Enum>)
-                                    enumClass.asSubclass(Enum.class),
+                    findEnumConstant(
+                            ICON_ENUM_CLASSES,
                             pinned
                                     ? "PIN_OFF_OUTLINE"
                                     : "PIN_OUTLINE"
                     );
+
+            if (iconEnum == null) {
+                Log.d(TAG, "SeparatePinClone"
+                        + " success=false"
+                        + " stage=iconEnum");
+                return null;
+            }
 
             Object numberObject =
                     invokeNoArgObject(
@@ -2551,6 +2591,50 @@ public final class PinPlaylistPatch {
             }
         } catch (Throwable error) {
             return null;
+        }
+
+        return null;
+    }
+
+    @Nullable
+    private static Object invokeStaticByNames(
+            String[] classNames,
+            String methodName,
+            Object... arguments
+    ) {
+        for (String className : classNames) {
+            Object result = invokeStaticByName(
+                    className,
+                    methodName,
+                    arguments
+            );
+
+            if (result != null) return result;
+        }
+
+        return null;
+    }
+
+    @Nullable
+    private static Object findEnumConstant(
+            String[] classNames,
+            String constantName
+    ) {
+        for (String className : classNames) {
+            try {
+                Class<?> enumClass = Class.forName(className);
+
+                @SuppressWarnings("unchecked")
+                Object constant = Enum.valueOf(
+                        (Class<? extends Enum>)
+                                enumClass.asSubclass(Enum.class),
+                        constantName
+                );
+
+                return constant;
+            } catch (Throwable ignored) {
+                // Try the symbol set for the other supported channel.
+            }
         }
 
         return null;
