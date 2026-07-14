@@ -1,10 +1,10 @@
-package app.morphe.patches.music.shared
+package app.seobject.patches.music
 
 import app.morphe.patcher.patch.ApkFileType
 import app.morphe.patcher.patch.AppTarget
 import app.morphe.patcher.patch.Compatibility
 
-internal object Constants {
+internal object Compatibility {
     val COMPATIBILITY_YOUTUBE_MUSIC = Compatibility(
         name = "YouTube Music",
         packageName = "com.google.android.apps.youtube.music",

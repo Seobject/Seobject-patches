@@ -37,13 +37,15 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v89-version-aware-menu";
+    private static final String BUILD_ID = "v90-stable-library-adapter";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
             {"arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
             {"btcw", "brfz"};
     private static final String[] TEXT_HELPER_CLASSES =
             {"bcow", "bbjy"};
+    private static final String[] LIBRARY_ADAPTER_CLASSES =
+            {"hyz", "hvx"};
     private static final String MENU_TITLE_PIN =
             "Pin playlist to Library";
     private static final String MENU_TITLE_UNPIN =
@@ -2803,8 +2805,7 @@ public final class PinPlaylistPatch {
                 ? null
                 : readFieldByName(controller, "f");
 
-        if (visualAdapter == null
-                || !"hyz".equals(objectTypeName(visualAdapter))) {
+        if (!isLibraryAdapter(visualAdapter)) {
             return false;
         }
 
@@ -2909,8 +2910,7 @@ public final class PinPlaylistPatch {
                 ? null
                 : readFieldByName(controller, "f");
 
-        if (visualAdapter == null
-                || !"hyz".equals(objectTypeName(visualAdapter))) {
+        if (!isLibraryAdapter(visualAdapter)) {
             if (adapterProxyFactoryInstallLogCount < 12) {
                 adapterProxyFactoryInstallLogCount++;
 
@@ -3662,8 +3662,7 @@ public final class PinPlaylistPatch {
                 : readFieldByName(controller, "f");
         Object sourceAdapter = readFieldByName(owner, "p");
 
-        if (visualAdapter == null
-                || !"hyz".equals(objectTypeName(visualAdapter))
+        if (!isLibraryAdapter(visualAdapter)
                 || sourceAdapter == null
                 || !"bewt".equals(objectTypeName(sourceAdapter))) {
             Log.d(TAG, "PreSubmitPositionMapSkipped"
@@ -5425,9 +5424,8 @@ public final class PinPlaylistPatch {
                     + " holderType=" + objectTypeName(holder));
         }
 
-        if (adapter == null
-                || holder == null
-                || !"hyz".equals(adapter.getClass().getName())) {
+        if (!isLibraryAdapter(adapter)
+                || holder == null) {
             return;
         }
 
@@ -6905,9 +6903,11 @@ public final class PinPlaylistPatch {
     ) {
         Object adapter = readFieldByName(recycler, "m");
 
-        if (adapter == null
-                || !"hyz".equals(adapter.getClass().getName())) {
-            adapter = findFieldValueByRuntimeType(recycler, "hyz");
+        if (!isLibraryAdapter(adapter)) {
+            adapter = findFieldValueByRuntimeTypes(
+                    recycler,
+                    LIBRARY_ADAPTER_CLASSES
+            );
         }
 
         Object controller = readFieldByName(adapter, "d");
@@ -7028,6 +7028,23 @@ public final class PinPlaylistPatch {
                 } catch (Throwable ignored) {
                 }
             }
+        }
+
+        return null;
+    }
+
+    @Nullable
+    private static Object findFieldValueByRuntimeTypes(
+            @Nullable Object receiver,
+            String[] runtimeTypeNames
+    ) {
+        for (String runtimeTypeName : runtimeTypeNames) {
+            Object value = findFieldValueByRuntimeType(
+                    receiver,
+                    runtimeTypeName
+            );
+
+            if (value != null) return value;
         }
 
         return null;
@@ -7441,6 +7458,17 @@ public final class PinPlaylistPatch {
 
     private static String objectTypeName(@Nullable Object value) {
         return value == null ? "null" : value.getClass().getName();
+    }
+
+    private static boolean isLibraryAdapter(@Nullable Object value) {
+        if (value == null) return false;
+
+        String typeName = value.getClass().getName();
+        for (String candidate : LIBRARY_ADAPTER_CLASSES) {
+            if (candidate.equals(typeName)) return true;
+        }
+
+        return false;
     }
 
 
