@@ -95,8 +95,8 @@ internal object PlaylistFlyoutSourceFingerprint : Fingerprint(
 )
 
 val pinPlaylistPatch = bytecodePatch(
-    name = "Pin playlists",
-    description = "Replaces Speed Dial pinning with persistent Library playlist pinning.",
+    name = "Pin playlists (stable)",
+    description = "Stable YouTube Music 9.15.51 patch that replaces Speed Dial pinning with persistent Library playlist pinning.",
 ) {
     compatibleWith(COMPATIBILITY_YOUTUBE_MUSIC)
     extendWith("extensions/music.mpe")
@@ -107,6 +107,11 @@ val pinPlaylistPatch = bytecodePatch(
          */
         val menuItemPresenterClass =
             PlaylistMenuItemPresenterClassFingerprint.classDef
+
+        check(menuItemPresenterClass.type == "Lqks;") {
+            "The stable Pin playlists bundle supports only YouTube Music 9.15.51. " +
+                "Use Seobjects Random Patches (Dev) for 9.24.51, 9.25.50, or 9.26.51."
+        }
 
         val originalMethod = menuItemPresenterClass.methods.single { method ->
             method.name == "onClick" &&
@@ -627,6 +632,7 @@ val pinPlaylistPatch = bytecodePatch(
         val flyoutSourceMethod = PlaylistFlyoutSourceFingerprint.method
         val flyoutSourceParameterTypes =
             flyoutSourceMethod.parameters.map { parameter -> parameter.type }
+        val flyoutMenuType = flyoutSourceParameterTypes[0]
 
         val flyoutViewCandidates =
             PlaylistFlyoutSourceFingerprint.classDef.methods.filter {
@@ -670,7 +676,7 @@ val pinPlaylistPatch = bytecodePatch(
                 invoke-static {p1, p2, p3}, $EXTENSION_CLASS->captureFlyoutSource(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V
                 invoke-static {p1, p2}, $EXTENSION_CLASS->prepareFlyoutMenu(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object p1
-                check-cast p1, Lbwyr;
+                check-cast p1, $flyoutMenuType
             """
         )
 

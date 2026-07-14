@@ -3,8 +3,8 @@
   "version": "1.0.3",
   "patches": [
     {
-      "name": "Pin playlists",
-      "description": "Replaces Speed Dial pinning with persistent Library playlist pinning.",
+      "name": "Pin playlists (stable)",
+      "description": "Stable YouTube Music 9.15.51 patch that replaces Speed Dial pinning with persistent Library playlist pinning.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
