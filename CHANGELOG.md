@@ -1,3 +1,9 @@
+## [1.1.0-dev.4](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.3...v1.1.0-dev.4) (2026-07-14)
+
+### Bug Fixes
+
+* fail open for flyout hook errors ([84c0824](https://github.com/Seobject/Seobject-patches/commit/84c08246305be8281fa11aa9209cd7fa639510ed))
+
 ## [1.1.0-dev.3](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.2...v1.1.0-dev.3) (2026-07-14)
 
 ### Bug Fixes
