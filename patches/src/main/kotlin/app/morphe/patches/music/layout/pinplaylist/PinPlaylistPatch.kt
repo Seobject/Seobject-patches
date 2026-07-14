@@ -133,18 +133,18 @@ val pinPlaylistPatch = bytecodePatch(
         patchedMethod.addInstructionsWithLabels(
             0,
             """
-                iget-object v$tempRegister, p0, Lqks;->c:Lbuzr;
+                iget-object v$tempRegister, p0, Lqup;->c:Lbwyn;
                 if-eqz v$tempRegister, :pin_playlist_native_click
 
-                invoke-static {v$tempRegister}, Laqft;->d(Lbuzr;)Lbrga;
+                invoke-static {v$tempRegister}, Larbe;->d(Lbwyn;)Lbtcx;
                 move-result-object v$tempRegister
                 if-eqz v$tempRegister, :pin_playlist_native_click
 
-                iget v$tempRegister, v$tempRegister, Lbrga;->c:I
-                invoke-static {v$tempRegister}, Lbrfz;->a(I)Lbrfz;
+                iget v$tempRegister, v$tempRegister, Lbtcx;->c:I
+                invoke-static {v$tempRegister}, Lbtcw;->a(I)Lbtcw;
                 move-result-object v$tempRegister
 
-                iget-object v$handledRegister, p0, Lqks;->c:Lbuzr;
+                iget-object v$handledRegister, p0, Lqup;->c:Lbwyn;
 
                 invoke-static {p1, v$tempRegister, p0, v$handledRegister}, $EXTENSION_CLASS->handleClick(Landroid/view/View;Ljava/lang/Enum;Ljava/lang/Object;Ljava/lang/Object;)Z
                 move-result v$handledRegister
@@ -152,13 +152,13 @@ val pinPlaylistPatch = bytecodePatch(
 
                 # Close the flyout through the stock path without dispatching the
                 # original Speed Dial endpoint.
-                iget-object v$tempRegister, p0, Lqks;->t:Lqkl;
-                iget-object v$tempRegister, v$tempRegister, Lqkl;->a:Lqks;
-                iget-object v$tempRegister, v$tempRegister, Lqks;->b:Lckoh;
-                invoke-interface {v$tempRegister}, Lckoh;->gG()Ljava/lang/Object;
+                iget-object v$tempRegister, p0, Lqup;->t:Lqui;
+                iget-object v$tempRegister, v$tempRegister, Lqui;->a:Lqup;
+                iget-object v$tempRegister, v$tempRegister, Lqup;->b:Lcmxx;
+                invoke-interface {v$tempRegister}, Lcmxx;->ht()Ljava/lang/Object;
                 move-result-object v$tempRegister
-                check-cast v$tempRegister, Lbdvs;
-                invoke-interface {v$tempRegister}, Lbdvs;->i()V
+                check-cast v$tempRegister, Lbffz;
+                invoke-interface {v$tempRegister}, Lbffz;->i()V
                 return-void
             """,
             ExternalLabel(
@@ -197,27 +197,78 @@ val pinPlaylistPatch = bytecodePatch(
         val bindInstructions =
             menuItemBindMethod.implementation!!.instructions
 
-        val nativeToggleStateCallIndex =
-            bindInstructions.withIndex().first { indexed ->
+        val nativeToggleCandidates =
+            bindInstructions.indices.mapNotNull { callIndex ->
+                val instruction = bindInstructions[callIndex]
                 val reference =
-                    (indexed.value as? ReferenceInstruction)
+                    (instruction as? ReferenceInstruction)
                         ?.reference as? MethodReference
-                        ?: return@first false
+                        ?: return@mapNotNull null
 
-                reference.definingClass == "Lqfj;" &&
-                    reference.name == "b" &&
-                    reference.returnType == "Z" &&
-                    reference.parameterTypes
-                        .map { it.toString() } ==
-                    listOf("Lbvan;")
-            }.index
+                val parameterTypes =
+                    reference.parameterTypes.map { it.toString() }
+                if (
+                    reference.returnType != "Z" ||
+                    parameterTypes.size != 1 ||
+                    parameterTypes.single().firstOrNull() !in setOf('L', '[')
+                ) {
+                    return@mapNotNull null
+                }
+
+                val moveResultIndex = callIndex + 1
+                if (
+                    moveResultIndex >= bindInstructions.size ||
+                    bindInstructions[moveResultIndex].opcode != Opcode.MOVE_RESULT
+                ) {
+                    return@mapNotNull null
+                }
+
+                val nativeRegister =
+                    (bindInstructions[moveResultIndex] as OneRegisterInstruction)
+                        .registerA
+                val modelIndex =
+                    (moveResultIndex + 1 until
+                        minOf(bindInstructions.size, moveResultIndex + 24))
+                        .firstOrNull { index ->
+                            bindInstructions[index].opcode == Opcode.IGET_BOOLEAN
+                        } ?: return@mapNotNull null
+                val modelRegister =
+                    (bindInstructions[modelIndex] as TwoRegisterInstruction)
+                        .registerA
+                val comparisonIndex =
+                    (modelIndex + 1 until
+                        minOf(bindInstructions.size, modelIndex + 12))
+                        .firstOrNull { index ->
+                            val comparison =
+                                bindInstructions[index] as? TwoRegisterInstruction
+                                    ?: return@firstOrNull false
+
+                            bindInstructions[index].opcode == Opcode.IF_EQ &&
+                                setOf(
+                                    comparison.registerA,
+                                    comparison.registerB,
+                                ) == setOf(nativeRegister, modelRegister)
+                        } ?: return@mapNotNull null
+
+                Triple(callIndex, modelIndex, comparisonIndex)
+            }
+
+        check(nativeToggleCandidates.size == 1) {
+            "Expected exactly one native/model toggle comparison; found ${nativeToggleCandidates.size}"
+        }
+
+        val (
+            nativeToggleStateCallIndex,
+            modelToggleStateIndex,
+            toggleComparisonIndex,
+        ) = nativeToggleCandidates.single()
 
         check(
             bindInstructions[
                 nativeToggleStateCallIndex + 1
             ].opcode == Opcode.MOVE_RESULT
         ) {
-            "Expected move-result after qpg.b(bwzj)"
+            "Expected move-result after native toggle-state call"
         }
 
         val nativeToggleStateRegister =
@@ -225,23 +276,10 @@ val pinPlaylistPatch = bytecodePatch(
                 nativeToggleStateCallIndex + 1
             ] as OneRegisterInstruction).registerA
 
-        val modelToggleStateIndex =
-            (nativeToggleStateCallIndex + 2 until
-                bindInstructions.size).first { index ->
-                bindInstructions[index].opcode ==
-                    Opcode.IGET_BOOLEAN
-            }
-
         val modelToggleStateRegister =
             (bindInstructions[
                 modelToggleStateIndex
             ] as TwoRegisterInstruction).registerA
-
-        val toggleComparisonIndex =
-            (modelToggleStateIndex + 1 until
-                bindInstructions.size).first { index ->
-                bindInstructions[index].opcode == Opcode.IF_EQ
-            }
 
         val toggleComparison =
             bindInstructions[
@@ -257,7 +295,7 @@ val pinPlaylistPatch = bytecodePatch(
                 modelToggleStateRegister
             )
         ) {
-            "Expected qpg toggle state to be compared with bwzj model state"
+            "Expected native toggle state to be compared with model state"
         }
 
         val p0Register =
@@ -268,7 +306,7 @@ val pinPlaylistPatch = bytecodePatch(
                 nativeToggleStateRegister <= 15 &&
                 modelToggleStateRegister <= 15
         ) {
-            "qup toggle guard requires compact registers; update the injection to use a range invoke"
+            "Menu toggle guard requires compact registers; update the injection to use a range invoke"
         }
 
         menuItemBindMethod.addInstructionsWithLabels(

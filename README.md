@@ -5,7 +5,7 @@ Random QoL patches for YouTube Music.
 ## 🩹 Patches list
 
 <!-- PATCHES_START -->
-> **[Latest stable release](https://github.com/Seobject/Seobject-patches/releases/latest)**&nbsp;&nbsp;•&nbsp;&nbsp;`stable`&nbsp;&nbsp;•&nbsp;&nbsp;1 patch total
+> **Development prerelease channel**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;1 patch total
 
 <details>
 <summary>📦 YouTube Music&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
@@ -13,8 +13,8 @@ Random QoL patches for YouTube Music.
 
 **🎯 Supported versions:**
 
-| 9.15.51 |
-| :---: |
+| 9.24.51 | 9.25.50 | 9.26.51 |
+| :---: | :---: | :---: |
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |---|---|---|
@@ -32,7 +32,7 @@ Import one of these permanent manifests into Universal ReVanced Manager:
 - [Development channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/dev/seobjects-random-patches-dev.json)
 - [Newest release from either channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/seobjects-random-patches.json)
 
-The stable `main` channel supports YouTube Music 9.15.51. Development builds for 9.26.51 are available from the [`dev` branch](https://github.com/Seobject/Seobject-patches/tree/dev).
+The stable `main` channel supports YouTube Music 9.15.51. This `dev` channel provides experimental support for 9.24.51, 9.25.50, and 9.26.51.
 
 ## 📜 License
 
