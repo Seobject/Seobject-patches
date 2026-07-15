@@ -1,11 +1,11 @@
 # 🧩 Seobjects Random Patches
 
-Random QoL patches for YouTube Music.
+Random QoL patches.
 
 ## 🩹 Patches list
 
 <!-- PATCHES_START -->
-> **[Latest stable release](https://github.com/Seobject/Seobject-patches/releases/latest)**&nbsp;&nbsp;•&nbsp;&nbsp;`stable`&nbsp;&nbsp;•&nbsp;&nbsp;1 patch total
+> **[Stable release](https://github.com/Seobject/Seobject-patches/releases/latest)**&nbsp;&nbsp;•&nbsp;&nbsp;`stable`&nbsp;&nbsp;•&nbsp;&nbsp;1 patch total
 
 <details>
 <summary>📦 YouTube Music&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
@@ -18,7 +18,7 @@ Random QoL patches for YouTube Music.
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |---|---|---|
-| **Pin playlists** | Replaces Speed Dial pinning with persistent Library playlist pinning. | None |
+| **Pin playlists** | Replaces Speed Dial pinning with Library playlist pinning or adds a custom "Pin to Library" button. | None |
 
 </details>
 
@@ -26,13 +26,12 @@ Random QoL patches for YouTube Music.
 
 ## Universal ReVanced Manager
 
-Import one of these permanent manifests into Universal ReVanced Manager:
+Import one of these manifests into your preferred manager:
 
 - [Stable channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/seobjects-random-patches-stable.json)
 - [Development channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/dev/seobjects-random-patches-dev.json)
 - [Newest release from either channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/seobjects-random-patches.json)
 
-The stable `main` channel supports YouTube Music 9.15.51. Development builds for 9.26.51 are available from the [`dev` branch](https://github.com/Seobject/Seobject-patches/tree/dev).
 
 ## 📜 License
 
