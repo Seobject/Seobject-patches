@@ -1,6 +1,6 @@
 # 🧩 Seobjects Random Patches
 
-Random QoL patches for YouTube Music.
+Random QoL patches
 
 ## 🩹 Patches list
 
@@ -24,9 +24,7 @@ Random QoL patches for YouTube Music.
 
 <!-- PATCHES_END -->
 
-## Universal ReVanced Manager
-
-Import one of these permanent manifests into Universal ReVanced Manager:
+Import one of these permanent manifests into your preferred manager:
 
 - [Stable channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/seobjects-random-patches-stable.json)
 - [Development channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/dev/seobjects-random-patches-dev.json)
