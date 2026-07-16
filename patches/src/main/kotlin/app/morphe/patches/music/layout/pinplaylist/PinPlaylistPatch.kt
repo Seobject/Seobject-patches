@@ -1,10 +1,12 @@
 package app.morphe.patches.music.layout.pinplaylist
 
 import app.morphe.patcher.Fingerprint
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.smali.ExternalLabel
+import app.seobject.patches.music.Compatibility.COMPATIBILITY_YOUTUBE_MUSIC
 import app.seobject.patches.music.settings.pinPlaylistSettingsResourcePatch
 import app.morphe.util.cloneMutable
 import com.android.tools.smali.dexlib2.Opcode
@@ -18,6 +20,8 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 private const val EXTENSION_CLASS =
     "Lapp/morphe/extension/music/patches/pinplaylist924/PinPlaylistPatch924;"
+private const val SETTINGS_CLASS =
+    "Lapp/morphe/extension/music/patches/pinplaylist924/PinPlaylistSettings;"
 
 /**
  * Matches MenuItemPresenter.onClick(View).
@@ -189,6 +193,7 @@ val pinPlaylistPatch = bytecodePatch(
     description = "Pins playlists to the top of the YouTube Music Library.",
 ) {
     dependsOn(pinPlaylistSettingsResourcePatch)
+    compatibleWith(COMPATIBILITY_YOUTUBE_MUSIC)
     extendWith("extensions/pinplaylist.mpe")
 
     execute {
@@ -1187,5 +1192,96 @@ val pinPlaylistPatch = bytecodePatch(
             )
         )
 
+    }
+
+    finalize {
+        /*
+         * Every extension is merged during patch execution before any patch
+         * finalizer runs. Locate Morphe's preference fragment structurally by
+         * the resource name it inflates, then install the standalone settings
+         * path immediately after addPreferencesFromResource().
+         *
+         * If no Morphe settings host is present, the Pin playlists feature
+         * remains functional with its default settings and this optional UI
+         * bridge is simply not installed.
+         */
+        val settingsClass =
+            classDefByStrings("morphe_prefs_icons_bold")
+                .singleOrNull { classDef ->
+                    classDef.methods.any { method ->
+                        method.parameters.isEmpty() &&
+                            method.returnType == "V" &&
+                            method.implementation?.instructions?.any { instruction ->
+                                val reference =
+                                    (instruction as? ReferenceInstruction)
+                                        ?.reference as? MethodReference
+
+                                reference?.name == "addPreferencesFromResource" &&
+                                    reference.parameterTypes
+                                        .map { it.toString() } == listOf("I") &&
+                                    reference.returnType == "V"
+                            } == true
+                    }
+                } ?: return@finalize
+
+        val initializeMethod = settingsClass.methods.singleOrNull { method ->
+            method.parameters.isEmpty() &&
+                method.returnType == "V" &&
+                method.implementation?.instructions?.any { instruction ->
+                    val reference =
+                        (instruction as? ReferenceInstruction)
+                            ?.reference as? MethodReference
+
+                    reference?.name == "addPreferencesFromResource" &&
+                        reference.parameterTypes
+                            .map { it.toString() } == listOf("I") &&
+                        reference.returnType == "V"
+                } == true
+        } ?: return@finalize
+
+        val mutableInitializeMethod =
+            mutableClassDefBy(settingsClass).methods.single { method ->
+                method.name == initializeMethod.name &&
+                    method.parameters.map { it.type } ==
+                        initializeMethod.parameters.map { it.type } &&
+                    method.returnType == initializeMethod.returnType
+            }
+
+        val alreadyInstalled =
+            mutableInitializeMethod.implementation!!.instructions.any { instruction ->
+                val reference =
+                    (instruction as? ReferenceInstruction)
+                        ?.reference as? MethodReference
+
+                reference?.definingClass == SETTINGS_CLASS &&
+                    reference.name == "installPreferencePath" &&
+                    reference.parameterTypes
+                        .map { it.toString() } ==
+                        listOf("Ljava/lang/Object;") &&
+                    reference.returnType == "V"
+            }
+
+        if (alreadyInstalled) return@finalize
+
+        val addPreferencesIndex =
+            mutableInitializeMethod.implementation!!.instructions
+                .withIndex()
+                .single { indexed ->
+                    val reference =
+                        (indexed.value as? ReferenceInstruction)
+                            ?.reference as? MethodReference
+
+                    reference?.name == "addPreferencesFromResource" &&
+                        reference.parameterTypes
+                            .map { it.toString() } == listOf("I") &&
+                        reference.returnType == "V"
+                }
+                .index
+
+        mutableInitializeMethod.addInstructions(
+            addPreferencesIndex + 1,
+            "invoke-static { p0 }, " +
+                "$SETTINGS_CLASS->installPreferencePath(Ljava/lang/Object;)V"
+        )
     }
 }

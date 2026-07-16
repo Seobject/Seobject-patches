@@ -1,3 +1,6 @@
+import java.io.File
+
+
 group = "app.morphe"
 
 val pinPlaylistClasses = project(":extensions:music").layout.buildDirectory.dir(
@@ -28,12 +31,13 @@ val buildPinPlaylistExtension = tasks.register<Exec>("buildPinPlaylistExtension"
 
     doFirst {
         val sdkRoot = sequenceOf(
-            System.getenv("ANDROID_SDK_ROOT"),
-            System.getenv("ANDROID_HOME"),
-            System.getenv("LOCALAPPDATA")?.let { "$it/Android/Sdk" },
+            providers.environmentVariable("ANDROID_SDK_ROOT").orNull,
+            providers.environmentVariable("ANDROID_HOME").orNull,
+            providers.environmentVariable("LOCALAPPDATA").orNull
+                ?.let { "$it/Android/Sdk" },
         )
             .filterNotNull()
-            .map { file(it) }
+            .map(::file)
             .firstOrNull { it.isDirectory }
             ?: error("Android SDK not found")
 
@@ -41,8 +45,13 @@ val buildPinPlaylistExtension = tasks.register<Exec>("buildPinPlaylistExtension"
         val d8 = buildToolsDirectory.listFiles()
             ?.asSequence()
             ?.filter { it.isDirectory }
-            ?.sortedByDescending { it.name }
-            ?.flatMap { directory ->
+            ?.mapNotNull { directory ->
+                runCatching {
+                    org.gradle.util.GradleVersion.version(directory.name)
+                }.getOrNull()?.let { version -> directory to version }
+            }
+            ?.sortedByDescending { (_, version) -> version }
+            ?.flatMap { (directory, _) ->
                 sequenceOf(
                     directory.resolve("d8"),
                     directory.resolve("d8.bat"),
@@ -93,7 +102,6 @@ dependencies {
     implementation(libs.guava)
 
     implementation(libs.morphe.patches.library)
-
 
     // Android API stubs defined here.
     compileOnly(project(":patches:stub"))

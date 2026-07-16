@@ -38,7 +38,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch924 {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v122-concrete-source-anchor";
+    private static final String BUILD_ID = "v123-standalone-settings-materialization";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
             {"aqxr", "arad", "arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
@@ -4545,19 +4545,21 @@ public final class PinPlaylistPatch924 {
      * synchronously, avoiding the old per-row View.post delay.
      */
     private static boolean isFeatureEnabled() {
-        Boolean enabled = lastFeatureEnabledState;
+        Context context = resolveApplicationContext();
+        boolean enabled = PinPlaylistSettings.isEnabled(context);
+        Boolean previous = lastFeatureEnabledState;
 
-        if (enabled == null) {
+        if (previous == null || previous != enabled) {
             synchronized (featureStateLock) {
-                enabled = lastFeatureEnabledState;
+                previous = lastFeatureEnabledState;
 
-                if (enabled == null) {
-                    enabled = PinPlaylistSettings.ENABLED.get();
+                if (previous == null || previous != enabled) {
                     lastFeatureEnabledState = enabled;
+                    featureStoreStateSynchronized = false;
 
-                    Log.d(TAG, "PinPlaylistFeatureStartup"
+                    Log.d(TAG, "PinPlaylistFeatureState"
                             + " enabled=" + enabled
-                            + " restartRequired=true");
+                            + " previous=" + previous);
                 }
             }
         }
@@ -4599,11 +4601,11 @@ public final class PinPlaylistPatch924 {
     }
 
     private static boolean isSeparateMenuItemEnabled() {
-        /*
-         * Native-model insertion is now the only supported flyout mode. Reuse
-         * the single feature setting instead of registering another BooleanSetting.
-         */
-        return isFeatureEnabled();
+        if (!isFeatureEnabled()) return false;
+
+        return PinPlaylistSettings.isSeparateMenuItemEnabled(
+                resolveApplicationContext()
+        );
     }
 
 
