@@ -1,3 +1,9 @@
+## [1.1.0-dev.6](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.5...v1.1.0-dev.6) (2026-07-16)
+
+### Bug Fixes
+
+* make Pin playlists settings standalone ([1c9a886](https://github.com/Seobject/Seobject-patches/commit/1c9a8867f8a617936e63ff748b6446d4857b7d10))
+
 ## [1.1.0-dev.5](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.4...v1.1.0-dev.5) (2026-07-14)
 
 ### Bug Fixes
