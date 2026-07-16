@@ -1,3 +1,9 @@
+## [1.0.7](https://github.com/Seobject/Seobject-patches/compare/v1.0.6...v1.0.7) (2026-07-16)
+
+### Bug Fixes
+
+* show released version in README ([58c93c7](https://github.com/Seobject/Seobject-patches/commit/58c93c764f288af3e98aeb0e934049d20b17add5))
+
 ## [1.0.6](https://github.com/Seobject/Seobject-patches/compare/v1.0.5...v1.0.6) (2026-07-16)
 
 ### Bug Fixes
