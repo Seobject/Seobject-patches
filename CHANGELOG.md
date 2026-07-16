@@ -1,3 +1,9 @@
+## [1.1.0-dev.7](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.6...v1.1.0-dev.7) (2026-07-16)
+
+### Bug Fixes
+
+* simplify Pin playlists setting ([36c2f0c](https://github.com/Seobject/Seobject-patches/commit/36c2f0cfde81fadd82c55ee7ddfa70ceb2ed888d))
+
 ## [1.1.0-dev.6](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.5...v1.1.0-dev.6) (2026-07-16)
 
 ### Bug Fixes
