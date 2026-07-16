@@ -1,4 +1,4 @@
-package app.morphe.extension.music.patches.pinplaylist;
+package app.morphe.extension.music.patches.pinplaylist924;
 
 import android.content.Context;
 import android.graphics.Canvas;
@@ -14,6 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -35,17 +36,21 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
-public final class PinPlaylistPatch {
+public final class PinPlaylistPatch924 {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v92-safe-flyout-hooks";
+    private static final String BUILD_ID = "v122-concrete-source-anchor";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
-            {"arbe", "aqft"};
+            {"aqxr", "arad", "arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
-            {"btcw", "brfz"};
+            {"bsts", "btcw", "brfz"};
     private static final String[] TEXT_HELPER_CLASSES =
-            {"bcow", "bbjy"};
+            {"bcjc", "bcow", "bbjy"};
     private static final String[] LIBRARY_ADAPTER_CLASSES =
-            {"hyz", "hvx"};
+            {"hxs", "hyz", "hvx"};
+    private static final String[] ADAPTER_MOVE_NOTIFY_METHODS =
+            {"iF", "jv", "js"};
+    private static final String[] ADAPTER_FULL_NOTIFY_METHODS =
+            {"eB", "fq", "fo", "fj"};
     private static final String MENU_TITLE_PIN =
             "Pin playlist to Library";
     private static final String MENU_TITLE_UNPIN =
@@ -81,6 +86,32 @@ public final class PinPlaylistPatch {
     private static final IdentityHashMap<Object, String> flyoutPresenterIds =
             new IdentityHashMap<>();
 
+    /*
+     * Bounded identity cache for page/source objects whose playlist identity
+     * was already resolved. Reopening the same page menu can then avoid another
+     * protobuf graph traversal.
+     */
+    private static final IdentityHashMap<Object, String>
+            flyoutSourcePlaylistIds = new IdentityHashMap<>();
+    private static final int MAX_FLYOUT_SOURCE_ID_CACHE = 128;
+
+    /*
+     * Reflection is used only to bridge app-private models. Cache successful
+     * structural resolutions so normal menu binding does not rescan classes.
+     */
+    private static final Map<String, Method> staticMethodCache =
+            new LinkedHashMap<>();
+    private static final int MAX_STATIC_METHOD_CACHE = 128;
+
+    private static final IdentityHashMap<Class<?>, List<Field>>
+            instanceFieldCache = new IdentityHashMap<>();
+    private static final int MAX_INSTANCE_FIELD_CACHE = 96;
+
+    private static final IdentityHashMap<Class<?>, Method>
+            presenterIconGetterCache = new IdentityHashMap<>();
+    private static final Set<Class<?>> presenterIconGetterMisses =
+            Collections.newSetFromMap(new IdentityHashMap<Class<?>, Boolean>());
+
     private static final IdentityHashMap<Object, Boolean>
             injectedLibraryPinMenuItems = new IdentityHashMap<>();
 
@@ -89,6 +120,13 @@ public final class PinPlaylistPatch {
 
     @Nullable
     private static volatile String activeFlyoutPlaylistId;
+
+    /*
+     * The normalized 9.25 row can omit the dynamic Speed Dial title/icon data
+     * that 9.24 exposed directly on the row. Preserve the same semantic anchor
+     * by remembering whether the original native flyout contained Speed Dial.
+     */
+    private static volatile boolean activeFlyoutHasSpeedDial;
 
     private static volatile long activeFlyoutCapturedAtMs;
 
@@ -119,6 +157,9 @@ public final class PinPlaylistPatch {
 
     private static final IdentityHashMap<Object, Map<Long, String>>
             adapterPlaylistIds = new IdentityHashMap<>();
+
+    private static final IdentityHashMap<Object, Set<Long>>
+            adapterOrdinaryPlaylistRows = new IdentityHashMap<>();
 
     private static final IdentityHashMap<Object, List<Long>>
             adapterBaseOrder = new IdentityHashMap<>();
@@ -153,6 +194,28 @@ public final class PinPlaylistPatch {
     private static int adapterProxyAttemptLogCount;
     private static int directSourceRowLogCount;
 
+    @Nullable
+    private static volatile Class<?> adapterProxyOwnerClass;
+
+    private static final Set<Class<?>> adapterProxyRenderInfoClasses =
+            new LinkedHashSet<>();
+
+    private static final IdentityHashMap<Object, Object>
+            adapterProxySourceAdapters = new IdentityHashMap<>();
+
+    private static final IdentityHashMap<Object, Object>
+            adapterProxyVisualAdapters = new IdentityHashMap<>();
+
+    /*
+     * The obfuscated visual-adapter class is reused by Library playlists,
+     * playlist song lists, albums, and other feeds. Track candidate owners by
+     * object identity so hot hooks do not treat every instance of that class
+     * as the Library. A candidate has a bounded source adapter; confirmation
+     * requires a successfully installed playlist position map.
+     */
+    private static final IdentityHashMap<Object, Boolean>
+            adapterProxyCandidateOwners = new IdentityHashMap<>();
+
     private static final IdentityHashMap<Object, AdapterProxySource>
             adapterProxySources = new IdentityHashMap<>();
 
@@ -174,6 +237,12 @@ public final class PinPlaylistPatch {
     private static final IdentityHashMap<Object, int[]>
             adapterVisualToSourcePositions =
             new IdentityHashMap<>();
+
+    private static final IdentityHashMap<Object, String>
+            stablePrebindKeys = new IdentityHashMap<>();
+
+    private static boolean stableDelegateLiveUpdateRequested;
+    private static boolean stableDelegateLiveUpdateApplied;
 
     /*
      * Visible local-pin state for the Library rows. The factory map already
@@ -216,7 +285,8 @@ public final class PinPlaylistPatch {
             new IdentityHashMap<>();
 
     private static int rowPinIndicatorLogCount;
-    private static int nativeToggleGuardLogCount;
+    private static int flyoutMenuIconLogCount;
+    private static int flyoutMenuCandidateLogCount;
 
     private static final ThreadLocal<Object>
             pendingAdapterPositionRemapTarget =
@@ -242,6 +312,13 @@ public final class PinPlaylistPatch {
 
     private static int adapterProxyFactoryMapLogCount;
     private static int adapterProxyFactoryInstallLogCount;
+    private static int adapterProxyVisualBridgeLogCount;
+    private static int nativeLibrarySubmissionLogCount;
+    private static int nativeLibraryResolverLogCount;
+    private static final ThreadLocal<Object>
+            pendingNativeLibraryController = new ThreadLocal<>();
+    private static final IdentityHashMap<Object, String>
+            preparedNativeLibraryLists = new IdentityHashMap<>();
 
     private static Object activeAdapterProxyFactoryOwner;
     private static Object activeAdapterProxyFactoryVisualAdapter;
@@ -253,7 +330,6 @@ public final class PinPlaylistPatch {
      */
     private static volatile Boolean processHasAnyPins;
     private static boolean noPinColdStartBypassLogged;
-    private static int noPinFactoryContextLogCount;
 
     private static final Object featureStateLock =
             new Object();
@@ -262,7 +338,6 @@ public final class PinPlaylistPatch {
     private static volatile Boolean lastFeatureEnabledState;
 
     @Nullable
-    private static volatile Boolean lastSeparateMenuItemEnabledState;
 
     private static volatile boolean featureStoreStateSynchronized;
 
@@ -287,6 +362,7 @@ public final class PinPlaylistPatch {
     private static final class AdapterProxySource {
         final Object owner;
         final int sourceIndex;
+        Object sourceAdapter;
         Object sourceObject;
         Object renderInfo;
         long completedAtMs;
@@ -377,6 +453,9 @@ public final class PinPlaylistPatch {
     private static final Map<String, String>
             rowSignatureByPlaylistId = new LinkedHashMap<>();
 
+    private static final Set<String>
+            ambiguousRowSignatures = new LinkedHashSet<>();
+
     private static int rowIdentityConflictLogCount;
     private static int stableRowRemapConflictLogCount;
     private static int boundRowLogCount;
@@ -393,6 +472,7 @@ public final class PinPlaylistPatch {
      */
     private static void resetFlyoutIdentityMappings() {
         activeFlyoutPlaylistId = null;
+        activeFlyoutHasSpeedDial = false;
         activeFlyoutCapturedAtMs = 0L;
 
         synchronized (flyoutObjectIds) {
@@ -443,6 +523,132 @@ public final class PinPlaylistPatch {
         }
 
         return playlistId;
+    }
+
+    @Nullable
+    private static String lookupCachedFlyoutSourcePlaylistId(
+            @Nullable Object sourceObject
+    ) {
+        if (sourceObject == null) return null;
+
+        synchronized (flyoutSourcePlaylistIds) {
+            return flyoutSourcePlaylistIds.get(sourceObject);
+        }
+    }
+
+    private static void rememberFlyoutSourcePlaylistId(
+            @Nullable Object sourceObject,
+            String playlistId
+    ) {
+        if (sourceObject == null
+                || !PinStore.isSupportedPlaylistId(playlistId)) {
+            return;
+        }
+
+        synchronized (flyoutSourcePlaylistIds) {
+            if (flyoutSourcePlaylistIds.size()
+                    >= MAX_FLYOUT_SOURCE_ID_CACHE) {
+                flyoutSourcePlaylistIds.clear();
+            }
+
+            flyoutSourcePlaylistIds.put(sourceObject, playlistId);
+        }
+    }
+
+    @Nullable
+    private static String findStrongSupportedPlaylistIdConsensus(
+            Map<String, Integer> counts
+    ) {
+        String bestId = null;
+        int bestCount = 0;
+        int secondBestCount = 0;
+        boolean tied = false;
+
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            String candidate = entry.getKey();
+            Integer countObject = entry.getValue();
+
+            if (!PinStore.isSupportedPlaylistId(candidate)
+                    || countObject == null) {
+                continue;
+            }
+
+            int count = countObject;
+
+            if (count > bestCount) {
+                secondBestCount = bestCount;
+                bestCount = count;
+                bestId = candidate;
+                tied = false;
+            } else if (count == bestCount) {
+                tied = true;
+            } else if (count > secondBestCount) {
+                secondBestCount = count;
+            }
+        }
+
+        return bestCount >= 2
+                && !tied
+                && bestCount > secondBestCount
+                ? bestId
+                : null;
+    }
+
+    /**
+     * Fast path for ordinary playlist menus. The same canonical playlist ID is
+     * normally present in several independent native rows. Stop as soon as two
+     * rows agree instead of traversing the presenter plus every menu item.
+     * The existing full graph resolver remains the compatibility fallback.
+     */
+    @Nullable
+    private static String resolveFastMenuConsensusPlaylistId(
+            @Nullable Object flyoutMenu
+    ) {
+        Object listObject = readFieldByName(flyoutMenu, "c");
+
+        if (!(listObject instanceof List)) {
+            return null;
+        }
+
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        int scannedItems = 0;
+
+        for (Object menuItem : (List<?>) listObject) {
+            if (menuItem == null) continue;
+            if (scannedItems >= 6) break;
+            scannedItems++;
+
+            Set<String> itemIds =
+                    collectCanonicalPlaylistIds(menuItem, 8);
+
+            for (String itemId : itemIds) {
+                if (!PinStore.isSupportedPlaylistId(itemId)) {
+                    continue;
+                }
+
+                Integer previous = counts.get(itemId);
+                counts.put(
+                        itemId,
+                        previous == null ? 1 : previous + 1
+                );
+            }
+
+            String consensus =
+                    findStrongSupportedPlaylistIdConsensus(counts);
+
+            if (PinStore.isSupportedPlaylistId(consensus)) {
+                Log.d(TAG, "FlyoutPageIdentityBridge"
+                        + " source=fastMenuConsensus"
+                        + " playlistId=" + consensus
+                        + " scannedItems=" + scannedItems
+                        + " counts=" + counts
+                        + " menuType="
+                        + objectTypeName(flyoutMenu));
+                return consensus;
+            }
+        }
+
+        return null;
     }
 
     @Nullable
@@ -526,12 +732,16 @@ public final class PinPlaylistPatch {
                                     menuItem
                             );
 
-                    Log.d(TAG, "FlyoutPageMenuCandidate"
-                            + " index=" + index
-                            + " title=" + title
-                            + " ids=" + itemIds
-                            + " itemType="
-                            + objectTypeName(menuItem));
+                    if (flyoutMenuCandidateLogCount < 20) {
+                        flyoutMenuCandidateLogCount++;
+
+                        Log.d(TAG, "FlyoutPageMenuCandidate"
+                                + " index=" + index
+                                + " title=" + title
+                                + " ids=" + itemIds
+                                + " itemType="
+                                + objectTypeName(menuItem));
+                    }
 
                     menuIds.addAll(itemIds);
 
@@ -672,6 +882,15 @@ public final class PinPlaylistPatch {
          * source object does not expose a canonical playlist ID.
          */
         resetFlyoutIdentityMappings();
+        /*
+         * The native source parameter distinguishes the two observed playlist
+         * flyout contexts without relying on app symbols or localized text:
+         * Library-list row menus carry a concrete source model, while the
+         * playlist-page internal menu carries the exact Object.class sentinel.
+         */
+        activeFlyoutHasSpeedDial =
+                sourceObject != null
+                        && sourceObject.getClass() != Object.class;
 
         if (!flyoutSourceEntryLogged) {
             flyoutSourceEntryLogged = true;
@@ -682,30 +901,47 @@ public final class PinPlaylistPatch {
                     + " presenterType=" + objectTypeName(flyoutPresenter));
         }
 
-        Set<String> sourceStrings =
-                collectObjectStrings(sourceObject);
-        String playlistId =
-                findBestPlaylistId(sourceStrings);
+        Set<String> sourceStrings = Collections.emptySet();
         String viewPlaylistId =
                 consumePendingFlyoutViewPlaylistId();
+        String playlistId = viewPlaylistId;
+        String cachedSourcePlaylistId = null;
+        String fastMenuPlaylistId = null;
         String speedDialPlaylistId = null;
         String menuGraphPlaylistId = null;
 
-        if (!PinStore.isSupportedPlaylistId(playlistId)
-                && PinStore.isSupportedPlaylistId(viewPlaylistId)) {
-            playlistId = viewPlaylistId;
+        if (!PinStore.isSupportedPlaylistId(playlistId)) {
+            cachedSourcePlaylistId =
+                    lookupCachedFlyoutSourcePlaylistId(sourceObject);
+            playlistId = cachedSourcePlaylistId;
+        }
 
+        if (!PinStore.isSupportedPlaylistId(playlistId)) {
+            sourceStrings = collectObjectStrings(sourceObject);
+            playlistId = findBestPlaylistId(sourceStrings);
+        }
+
+        if (PinStore.isSupportedPlaylistId(viewPlaylistId)) {
             Log.d(TAG, "FlyoutPageIdentityBridge"
                     + " resolved=true"
+                    + " resolutionSource=pendingView"
                     + " playlistId=" + playlistId
                     + " sourceType=" + objectTypeName(sourceObject));
-        } else if (PinStore.isSupportedPlaylistId(playlistId)
-                && PinStore.isSupportedPlaylistId(viewPlaylistId)
-                && !playlistId.equals(viewPlaylistId)) {
+        } else if (PinStore.isSupportedPlaylistId(cachedSourcePlaylistId)) {
             Log.d(TAG, "FlyoutPageIdentityBridge"
-                    + " ignoredMismatchedViewId=" + viewPlaylistId
-                    + " sourceId=" + playlistId
+                    + " resolved=true"
+                    + " resolutionSource=sourceIdentityCache"
+                    + " playlistId=" + playlistId
                     + " sourceType=" + objectTypeName(sourceObject));
+        }
+
+        if (!PinStore.isSupportedPlaylistId(playlistId)) {
+            fastMenuPlaylistId =
+                    resolveFastMenuConsensusPlaylistId(flyoutMenu);
+
+            if (PinStore.isSupportedPlaylistId(fastMenuPlaylistId)) {
+                playlistId = fastMenuPlaylistId;
+            }
         }
 
         if (!PinStore.isSupportedPlaylistId(playlistId)) {
@@ -750,6 +986,8 @@ public final class PinPlaylistPatch {
                     + " sourceType=" + objectTypeName(sourceObject)
                     + " viewBridgeAvailable="
                     + PinStore.isSupportedPlaylistId(viewPlaylistId)
+                    + " fastMenuBridgeAvailable="
+                    + PinStore.isSupportedPlaylistId(fastMenuPlaylistId)
                     + " speedDialBridgeAvailable="
                     + PinStore.isSupportedPlaylistId(speedDialPlaylistId)
                     + " menuGraphBridgeAvailable="
@@ -765,10 +1003,23 @@ public final class PinPlaylistPatch {
             clearActiveFlyoutRowContext();
         }
 
-        indexFlyoutObjectGraph(
-                flyoutMenu,
+        rememberFlyoutSourcePlaylistId(
+                sourceObject,
                 playlistId
         );
+
+        /*
+         * A direct presenter mapping plus the active-flyout bridge is enough
+         * for the separate native row. Avoid indexing the complete menu graph
+         * on the UI thread. Retain the old graph fallback only when no
+         * presenter object is available at all.
+         */
+        if (flyoutPresenter == null) {
+            indexFlyoutObjectGraph(
+                    flyoutMenu,
+                    playlistId
+            );
+        }
 
         if (flyoutPresenter != null) {
             synchronized (flyoutPresenterIds) {
@@ -794,10 +1045,344 @@ public final class PinPlaylistPatch {
     }
 
     /**
-     * Adds a Library-specific Pin/Unpin row directly below the native Speed
-     * Dial row. The row is cloned from the active renderer variant so it keeps
-     * native styling, while identity/title tracking distinguishes its local
-     * action from the stock Speed Dial command.
+     * Returns the canonical playlist ID captured for the active flyout.
+     *
+     * Kotlin calls this before the app normalizes its menu. A null return is a
+     * hard stop: no native row is created for a non-playlist or ambiguous menu.
+     */
+    @Nullable
+    public static String getActiveFlyoutPlaylistIdForNativeRow() {
+        if (!isFeatureEnabled()
+                || !isSeparateMenuItemEnabled()) {
+            return null;
+        }
+
+        String playlistId = activeFlyoutPlaylistId;
+
+        if (!PinStore.isSupportedPlaylistId(playlistId)) {
+            return null;
+        }
+
+        return playlistId;
+    }
+
+    /**
+     * Returns the exact title for the row that is about to be constructed by
+     * YouTube Music's own native menu-item factory.
+     */
+    @Nullable
+    public static String getActiveFlyoutMenuTitle(
+            @Nullable Context context
+    ) {
+        String playlistId =
+                getActiveFlyoutPlaylistIdForNativeRow();
+
+        if (playlistId == null || context == null) {
+            return null;
+        }
+
+        Context appContext = context.getApplicationContext();
+        applicationContext =
+                appContext != null ? appContext : context;
+
+        boolean pinned =
+                PinStore.isPinned(context, playlistId);
+
+        return pinned
+                ? MENU_TITLE_UNPIN
+                : MENU_TITLE_PIN;
+    }
+
+    /**
+     * Inserts a native factory-created menu item after YouTube Music has
+     * completed qml.a(...) normalization.
+     *
+     * The seed item is not copied from an existing menu row. It was created by
+     * the app's own Context/String -> menu-item factory. We rebuild only that
+     * new seed to replace its title with a title object produced by the app's
+     * own native text factory. Its seed icon is intentionally left untouched
+     * in the protobuf; the patch-owned Pin/Unpin drawable is applied only after
+     * MenuItemPresenter completes its normal bind. The completed list is the
+     * exact list later copied by bwpg into qmu and bound by MenuItemPresenter.
+     */
+    public static List insertNativePinMenuItem(
+            @Nullable List convertedItems,
+            @Nullable Object nativeSeedItem,
+            @Nullable Object nativeTitleMessage
+    ) {
+        if (!isFeatureEnabled()
+                || !isSeparateMenuItemEnabled()
+                || convertedItems == null
+                || nativeSeedItem == null
+                || nativeTitleMessage == null) {
+            return convertedItems;
+        }
+
+        try {
+            String playlistId =
+                    getActiveFlyoutPlaylistIdForNativeRow();
+
+            if (playlistId == null) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=noCanonicalPlaylistId");
+                return convertedItems;
+            }
+
+            MenuComponentSelection selection =
+                    findActiveMenuComponent(
+                            nativeSeedItem,
+                            null,
+                            null
+                    );
+
+            if (selection == null
+                    || selection.parentField == null
+                    || !selection.titleField.getType()
+                    .isInstance(nativeTitleMessage)) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=seedSchemaMismatch"
+                        + " itemType="
+                        + objectTypeName(nativeSeedItem)
+                        + " titleType="
+                        + objectTypeName(nativeTitleMessage));
+                return convertedItems;
+            }
+
+            Object seedComponent =
+                    selection.sourceComponent;
+
+            Object componentBuilder =
+                    invokeNoArgObject(
+                            seedComponent,
+                            "toBuilder"
+                    );
+
+            if (componentBuilder == null
+                    || !invokeNoArgVoid(
+                    componentBuilder,
+                    "copyOnWrite"
+            )) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=componentCopyFailed"
+                        + " componentType="
+                        + objectTypeName(seedComponent));
+                return convertedItems;
+            }
+
+            Object componentInstance =
+                    readFieldByName(
+                            componentBuilder,
+                            "instance"
+                    );
+
+            if (componentInstance == null
+                    || !writeFieldByName(
+                    componentInstance,
+                    selection.titleField.getName(),
+                    nativeTitleMessage
+            )) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=titleWriteFailed"
+                        + " componentType="
+                        + objectTypeName(seedComponent));
+                return convertedItems;
+            }
+
+            Object finalComponent =
+                    invokeNoArgObject(
+                            componentBuilder,
+                            "build"
+                    );
+
+            if (finalComponent == null) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=componentBuildFailed");
+                return convertedItems;
+            }
+
+            Object itemBuilder =
+                    invokeNoArgObject(
+                            nativeSeedItem,
+                            "toBuilder"
+                    );
+
+            if (itemBuilder == null
+                    || !invokeNoArgVoid(
+                    itemBuilder,
+                    "copyOnWrite"
+            )) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=itemCopyFailed"
+                        + " itemType="
+                        + objectTypeName(nativeSeedItem));
+                return convertedItems;
+            }
+
+            Object itemInstance =
+                    readFieldByName(
+                            itemBuilder,
+                            "instance"
+                    );
+
+            if (itemInstance == null
+                    || !writeFieldByName(
+                    itemInstance,
+                    selection.parentField.getName(),
+                    finalComponent
+            )) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=itemComponentWriteFailed");
+                return convertedItems;
+            }
+
+            Object finalItem =
+                    invokeNoArgObject(
+                            itemBuilder,
+                            "build"
+                    );
+
+            if (finalItem == null
+                    || finalItem == nativeSeedItem) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=itemBuildFailed");
+                return convertedItems;
+            }
+
+            String expectedTitle =
+                    getActiveFlyoutMenuTitle(
+                            resolveApplicationContext()
+                    );
+
+            Object renderedTitle =
+                    invokeStaticByNames(
+                            MENU_ITEM_HELPER_CLASSES,
+                            "e",
+                            finalItem
+                    );
+
+            if (expectedTitle == null
+                    || renderedTitle == null
+                    || !expectedTitle.equals(
+                    renderedTitle.toString()
+            )) {
+                Log.d(TAG, "NativeFactoryPinRow skipped=true"
+                        + " reason=nativeTitleValidationFailed"
+                        + " expected=" + expectedTitle
+                        + " actual=" + renderedTitle
+                        + " itemType="
+                        + objectTypeName(finalItem));
+                return convertedItems;
+            }
+
+            /*
+             * Remove only rows created by this extension. The native list is a
+             * fresh ArrayList returned by qml.a(...), but this also makes the
+             * hook idempotent if another patch invokes it twice.
+             */
+            int removedExistingRows = 0;
+
+            for (int index = convertedItems.size() - 1;
+                 index >= 0;
+                 index--) {
+                Object item = convertedItems.get(index);
+
+                if (!isRememberedInjectedLibraryPinMenuItem(item)) {
+                    continue;
+                }
+
+                convertedItems.remove(index);
+                removedExistingRows++;
+            }
+
+            int speedDialIndex = -1;
+
+            for (int index = 0;
+                 index < convertedItems.size();
+                 index++) {
+                if (isSpeedDialMenuItem(
+                        convertedItems.get(index)
+                )) {
+                    speedDialIndex = index;
+                    break;
+                }
+            }
+
+            int insertionIndex =
+                    speedDialIndex >= 0
+                            ? Math.min(
+                            speedDialIndex + 1,
+                            convertedItems.size()
+                    )
+                            : activeFlyoutHasSpeedDial
+                            ? convertedItems.size()
+                            : Math.max(
+                            0,
+                            convertedItems.size() - 1
+                    );
+
+            List outputItems = convertedItems;
+
+            try {
+                outputItems.add(
+                        insertionIndex,
+                        finalItem
+                );
+            } catch (UnsupportedOperationException immutableList) {
+                outputItems =
+                        new ArrayList(convertedItems);
+
+                insertionIndex =
+                        Math.min(
+                                insertionIndex,
+                                outputItems.size()
+                        );
+
+                outputItems.add(
+                        insertionIndex,
+                        finalItem
+                );
+            }
+
+            rememberInjectedLibraryPinMenuItem(finalItem);
+            synchronized (flyoutObjectIds) {
+                flyoutObjectIds.put(finalItem, playlistId);
+            }
+
+            Log.d(TAG, "NativeFactoryPinRow added=true"
+                    + " postNormalization=true"
+                    + " playlistId=" + playlistId
+                    + " itemType="
+                    + objectTypeName(finalItem)
+                    + " componentType="
+                    + objectTypeName(finalComponent)
+                    + " titleType="
+                    + objectTypeName(nativeTitleMessage)
+                    + " title=" + renderedTitle
+                    + " iconMode=patchOwnedBindDrawable"
+                    + " speedDialIndex=" + speedDialIndex
+                    + " sourceSpeedDialPresent="
+                    + activeFlyoutHasSpeedDial
+                    + " insertionIndex=" + insertionIndex
+                    + " removedExistingRows="
+                    + removedExistingRows
+                    + " outputCount="
+                    + outputItems.size());
+
+            return outputItems;
+        } catch (Throwable error) {
+            Log.e(TAG, "Failed inserting native post-normalization pin row", error);
+            return convertedItems;
+        }
+    }
+
+    /**
+     * Returns a detached native flyout-menu protobuf containing the optional
+     * Library Pin/Unpin action.
+     *
+     * The menu supplied by YouTube Music belongs to an enclosing Elements
+     * command and may already have a memoized serialized size. Mutating that
+     * object in place can corrupt later serialization when the menu is reused.
+     * Always modify a builder-owned copy and return the rebuilt message.
      */
     @Nullable
     public static Object prepareFlyoutMenu(
@@ -811,19 +1396,7 @@ public final class PinPlaylistPatch {
         }
 
         try {
-            Object listObject =
-                    readFieldByName(flyoutMenu, "c");
-
-            if (!(listObject instanceof List)) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
-                        + " reason=noMenuList"
-                        + " menuType="
-                        + objectTypeName(flyoutMenu));
-                return flyoutMenu;
-            }
-
-            String playlistId =
-                    activeFlyoutPlaylistId;
+            String playlistId = activeFlyoutPlaylistId;
 
             if (!PinStore.isSupportedPlaylistId(playlistId)) {
                 playlistId = findBestPlaylistId(
@@ -832,86 +1405,80 @@ public final class PinPlaylistPatch {
             }
 
             /*
-             * Both Library-row and playlist-page menus are supported, but
-             * injection still requires a canonical playlist ID. The page path
-             * receives that identity from the earlier qot.k View hook; all
-             * unrelated menus remain untouched.
+             * Canonical identity is the hard safety boundary. A playlist menu
+             * may change layout or omit Speed Dial, but an unrelated menu must
+             * never receive a synthetic command-bearing row.
              */
             if (!PinStore.isSupportedPlaylistId(playlistId)) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
+                Log.d(TAG, "NativePinMenuRow skipped=true"
                         + " reason=noCanonicalPlaylistId"
-                        + " sourceType="
-                        + objectTypeName(sourceObject));
+                        + " menuType=" + objectTypeName(flyoutMenu)
+                        + " sourceType=" + objectTypeName(sourceObject));
+                return flyoutMenu;
+            }
+
+            Object menuBuilder = invokeNoArgObject(
+                    flyoutMenu,
+                    "toBuilder"
+            );
+
+            if (menuBuilder == null
+                    || !invokeNoArgVoid(menuBuilder, "copyOnWrite")) {
+                Log.d(TAG, "NativePinMenuRow skipped=true"
+                        + " reason=menuCopyFailed"
+                        + " menuType=" + objectTypeName(flyoutMenu));
+                return flyoutMenu;
+            }
+
+            Object workingMenu = readFieldByName(
+                    menuBuilder,
+                    "instance"
+            );
+
+            if (workingMenu == null) {
+                Log.d(TAG, "NativePinMenuRow skipped=true"
+                        + " reason=noMenuCopyInstance"
+                        + " menuType=" + objectTypeName(flyoutMenu));
+                return flyoutMenu;
+            }
+
+            Field listField = findNativeMenuListField(workingMenu);
+            if (listField == null) {
+                Log.d(TAG, "NativePinMenuRow skipped=true"
+                        + " reason=noNativeMenuList"
+                        + " menuType=" + objectTypeName(workingMenu));
+                logDirectObjectFields(
+                        "NativePinMenuContainerProbe",
+                        workingMenu
+                );
                 return flyoutMenu;
             }
 
             /*
-             * qot.j can reuse the bwyr instance supplied in p1 when the
-             * playlist menu is reopened. Never make that reusable protobuf
-             * mutable. Work on a builder-owned copy and return the detached
-             * message to the bytecode hook instead.
+             * The detached protobuf still owns a frozen repeated-field list.
+             * The generated helper makes that list mutable on only this copy.
              */
-            Object menuBuilder =
-                    invokeNoArgObject(
-                            flyoutMenu,
-                            "toBuilder"
-                    );
-
-            if (menuBuilder == null
-                    || !invokeNoArgVoid(
-                    menuBuilder,
-                    "copyOnWrite"
-            )) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
-                        + " reason=menuCopyFailed"
-                        + " menuType="
-                        + objectTypeName(flyoutMenu));
+            if (!invokeNoArgVoid(workingMenu, "a")) {
+                Log.d(TAG, "NativePinMenuRow skipped=true"
+                        + " reason=menuListCopyOnWriteFailed"
+                        + " listField=" + listField.getName()
+                        + " menuType=" + objectTypeName(workingMenu));
                 return flyoutMenu;
             }
 
-            Object menuCopyInstance =
-                    readFieldByName(
-                            menuBuilder,
-                            "instance"
-                    );
-
-            if (menuCopyInstance == null) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
-                        + " reason=noMenuCopyInstance"
-                        + " builderType="
-                        + objectTypeName(menuBuilder));
+            List mutableItems = readListField(workingMenu, listField);
+            if (mutableItems == null || mutableItems.isEmpty()) {
+                Log.d(TAG, "NativePinMenuRow skipped=true"
+                        + " reason=noMutableMenuList"
+                        + " listField=" + listField.getName());
                 return flyoutMenu;
             }
-
-            /* bwyr.a() detaches its repeated menu-item list for mutation. */
-            if (!invokeNoArgVoid(menuCopyInstance, "a")) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
-                        + " reason=menuCopyFailed"
-                        + " stage=mutableList"
-                        + " menuType="
-                        + objectTypeName(menuCopyInstance));
-                return flyoutMenu;
-            }
-
-            Object mutableListObject =
-                    readFieldByName(menuCopyInstance, "c");
-
-            if (!(mutableListObject instanceof List)) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
-                        + " reason=noMutableMenuList");
-                return flyoutMenu;
-            }
-
-            List mutableItems =
-                    (List) mutableListObject;
 
             int removedExistingRows = 0;
-
             for (int index = mutableItems.size() - 1;
                  index >= 0;
                  index--) {
                 Object item = mutableItems.get(index);
-
                 if (!isInjectedLibraryPinMenuItem(item)) {
                     continue;
                 }
@@ -921,123 +1488,315 @@ public final class PinPlaylistPatch {
             }
 
             int speedDialIndex = -1;
-
             for (int index = 0;
                  index < mutableItems.size();
                  index++) {
-                Object item = mutableItems.get(index);
-
-                if (isSpeedDialMenuItem(item)) {
+                if (isSpeedDialMenuItem(mutableItems.get(index))) {
                     speedDialIndex = index;
                     break;
                 }
             }
 
             Context context = resolveApplicationContext();
-            boolean pinned =
-                    context != null
-                            && playlistId != null
-                            && PinStore.isPinned(
-                                    context,
-                                    playlistId
-                            );
+            boolean pinned = context != null
+                    && PinStore.isPinned(context, playlistId);
 
             String title = pinned
                     ? MENU_TITLE_UNPIN
                     : MENU_TITLE_PIN;
 
-            int cloneSourceIndex = speedDialIndex;
-            Object clonedItem = null;
-
-            if (cloneSourceIndex >= 0) {
-                clonedItem = cloneLibraryPinMenuItem(
-                        mutableItems.get(cloneSourceIndex),
-                        title,
-                        pinned
-                );
-            } else {
-                /*
-                 * Some accounts or flyout-filter settings omit Speed Dial.
-                 * Any native row using the same menu presenter is a safe
-                 * visual template: the cloned command is never dispatched,
-                 * because handleClick consumes the injected row by identity
-                 * and by its rewritten pin icon/title.
-                 */
-                for (int index = 0;
-                     index < mutableItems.size();
-                     index++) {
-                    Object candidate = mutableItems.get(index);
-
-                    if (isInjectedLibraryPinMenuItem(candidate)) {
-                        continue;
-                    }
-
-                    clonedItem = cloneLibraryPinMenuItem(
-                            candidate,
-                            title,
-                            pinned
+            /*
+             * Construct a new native model from protobuf default instances.
+             * Existing rows are used only to discover the active schema and
+             * primitive oneof/presence flags. No title, command, endpoint,
+             * renderer, or menu-item graph is copied from a source row.
+             */
+            Object pinIconSource =
+                    findNativePinIconSource(
+                            mutableItems
                     );
 
-                    if (clonedItem != null) {
-                        cloneSourceIndex = index;
-                        break;
-                    }
+            Object freshItem = null;
+            int schemaIndex = -1;
+
+            /*
+             * Select the dominant ordinary command-row schema instead of the
+             * first structurally plausible item. This avoids accidentally
+             * constructing a header, divider, account row, or another rare
+             * one-off renderer that happens to contain text and integer fields.
+             */
+            List<FreshMenuSchemaCandidate> schemaCandidates =
+                    collectFreshMenuSchemaCandidates(
+                            mutableItems
+                    );
+
+            for (FreshMenuSchemaCandidate schemaCandidate
+                    : schemaCandidates) {
+                freshItem =
+                        createFreshLibraryPinMenuItem(
+                                schemaCandidate.item,
+                                schemaCandidate.selection,
+                                pinIconSource,
+                                title,
+                                pinned
+                        );
+
+                if (freshItem != null) {
+                    schemaIndex = schemaCandidate.index;
+                    break;
                 }
             }
 
-            if (clonedItem == null) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
-                        + " reason=cloneFailed"
-                        + " removedExistingRows="
-                        + removedExistingRows);
+            if (freshItem == null) {
+                Log.d(TAG, "NativePinMenuRow skipped=true"
+                        + " reason=noFreshNativeSchema"
+                        + " listField=" + listField.getName()
+                        + " itemCount=" + mutableItems.size()
+                        + " speedDialIndex=" + speedDialIndex);
+                logNativeMenuCandidateSummary(mutableItems);
                 return flyoutMenu;
             }
 
-            int insertionIndex =
-                    Math.min(
-                            cloneSourceIndex + 1,
-                            mutableItems.size()
-                    );
-
-            mutableItems.add(
-                    insertionIndex,
-                    clonedItem
+            int insertionIndex = speedDialIndex >= 0
+                    ? Math.min(
+                    speedDialIndex + 1,
+                    mutableItems.size()
+            )
+                    : activeFlyoutHasSpeedDial
+                    ? mutableItems.size()
+                    : Math.max(
+                    0,
+                    mutableItems.size() - 1
             );
 
-            Object detachedMenu =
-                    invokeNoArgObject(
-                            menuBuilder,
-                            "build"
-                    );
-
-            if (detachedMenu == null) {
-                Log.d(TAG, "SeparatePinMenuRow skipped"
-                        + " reason=menuCopyBuildFailed"
-                        + " builderType="
-                        + objectTypeName(menuBuilder));
+            try {
+                mutableItems.add(insertionIndex, freshItem);
+            } catch (Throwable error) {
+                Log.e(TAG, "Detached menu list rejected inserted model", error);
                 return flyoutMenu;
             }
 
-            Log.d(TAG, "SeparatePinMenuRow"
-                    + " added=true"
-                    + " detachedCopy=true"
-                    + " refreshed="
-                    + (removedExistingRows > 0)
-                    + " removedExistingRows="
-                    + removedExistingRows
-                    + " template="
-                    + (speedDialIndex >= 0
-                    ? "speedDial"
-                    : "fallback")
-                    + " insertionIndex=" + insertionIndex
-                    + " pinned=" + pinned
-                    + " playlistId=" + playlistId
-                    + " title=" + title);
+            Object preparedMenu = invokeNoArgObject(
+                    menuBuilder,
+                    "build"
+            );
 
-            return detachedMenu;
+            if (preparedMenu == null) {
+                Log.d(TAG, "NativePinMenuRow skipped=true"
+                        + " reason=menuCopyBuildFailed"
+                        + " menuType=" + objectTypeName(flyoutMenu));
+                return flyoutMenu;
+            }
+
+            /* Index the exact detached object passed into the native pipeline. */
+            indexFlyoutObjectGraph(preparedMenu, playlistId);
+
+            Log.d(TAG, "NativePinMenuRow added=true"
+                    + " detachedCopy=true"
+                    + " playlistId=" + playlistId
+                    + " pinned=" + pinned
+                    + " listField=" + listField.getName()
+                    + " schemaIndex=" + schemaIndex
+                    + " speedDialIndex=" + speedDialIndex
+                    + " sourceSpeedDialPresent="
+                    + activeFlyoutHasSpeedDial
+                    + " insertionIndex=" + insertionIndex
+                    + " removedExistingRows=" + removedExistingRows
+                    + " itemType=" + objectTypeName(freshItem));
+
+            return preparedMenu;
         } catch (Throwable error) {
-            Log.e(TAG, "Failed adding separate Library pin menu row", error);
+            Log.e(TAG, "Failed preparing detached Library pin menu item", error);
             return flyoutMenu;
+        }
+    }
+
+    /**
+     * Finds the repeated-field list that actually contains the native Speed
+     * Dial row, avoiding dependence on one obfuscated field name.
+     */
+    @Nullable
+    private static Field findNativeMenuListField(Object flyoutMenu) {
+        /*
+         * Known 9.24.51 fast path. It is only a preference, not a requirement;
+         * the scored structural fallback below survives field renaming.
+         */
+        Field knownField = findInstanceFieldByName(
+                flyoutMenu.getClass(),
+                "c"
+        );
+
+        if (knownField != null
+                && readListField(flyoutMenu, knownField) != null) {
+            return knownField;
+        }
+
+        Field bestField = null;
+        int bestScore = Integer.MIN_VALUE;
+
+        for (Field field : getInstanceFields(flyoutMenu.getClass())) {
+            try {
+                field.setAccessible(true);
+                Object value = field.get(flyoutMenu);
+
+                if (!(value instanceof List)) {
+                    continue;
+                }
+
+                List<?> list = (List<?>) value;
+                if (list.isEmpty() || list.size() > 100) {
+                    continue;
+                }
+
+                int objectCount = 0;
+                int canonicalIdItems = 0;
+                int repeatedTypeCount = 0;
+                Class<?> firstType = null;
+
+                for (Object item : list) {
+                    if (item == null
+                            || item instanceof CharSequence
+                            || item instanceof Number
+                            || item instanceof Boolean
+                            || item.getClass().isEnum()) {
+                        continue;
+                    }
+
+                    objectCount++;
+
+                    if (firstType == null) {
+                        firstType = item.getClass();
+                    }
+
+                    if (firstType == item.getClass()) {
+                        repeatedTypeCount++;
+                    }
+
+                    Set<String> ids =
+                            collectCanonicalPlaylistIds(item, 6);
+                    if (!ids.isEmpty()) {
+                        canonicalIdItems++;
+                    }
+                }
+
+                if (objectCount == 0) {
+                    continue;
+                }
+
+                int score = objectCount
+                        + repeatedTypeCount * 2
+                        + canonicalIdItems * 8;
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestField = field;
+                }
+            } catch (Throwable ignored) {
+                // Try the next candidate field.
+            }
+        }
+
+        if (bestField != null) {
+            Log.d(TAG, "NativePinMenuList selected=true"
+                    + " structuralFallback=true"
+                    + " field=" + bestField.getName()
+                    + " score=" + bestScore
+                    + " menuType=" + objectTypeName(flyoutMenu));
+        }
+
+        return bestField;
+    }
+
+    @Nullable
+    private static Field findInstanceFieldByName(
+            Class<?> type,
+            String fieldName
+    ) {
+        for (Class<?> current = type;
+             current != null && current != Object.class;
+             current = current.getSuperclass()) {
+            try {
+                Field field = current.getDeclaredField(fieldName);
+                if (Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException ignored) {
+                // Continue through the class hierarchy.
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    @Nullable
+    private static List readListField(Object owner, Field field) {
+        try {
+            field.setAccessible(true);
+            Object value = field.get(owner);
+            return value instanceof List ? (List) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void logNativeMenuCandidateSummary(List<?> items) {
+        int limit = Math.min(items.size(), 20);
+
+        for (int index = 0; index < limit; index++) {
+            Object item = items.get(index);
+            MenuComponentSelection selection = item == null
+                    ? null
+                    : findActiveMenuComponent(item, null, null);
+
+            Log.d(TAG, "NativePinMenuCandidate"
+                    + " index=" + index
+                    + " itemType=" + objectTypeName(item)
+                    + " schemaCapable=" + (selection != null)
+                    + " componentType="
+                    + (selection == null
+                    ? "<none>"
+                    : objectTypeName(selection.sourceComponent))
+                    + " parentField="
+                    + (selection == null
+                    || selection.parentField == null
+                    ? "<none>"
+                    : selection.parentField.getName())
+                    + " titleField="
+                    + (selection == null
+                    ? "<none>"
+                    : selection.titleField.getName())
+                    + " iconField="
+                    + (selection == null
+                    ? "<none>"
+                    : selection.iconField.getName())
+                    + " speedDial=" + isSpeedDialMenuItem(item)
+                    + " ids=" + collectCanonicalPlaylistIds(item, 5));
+        }
+    }
+
+    /** Best-effort native bottom-sheet dismissal with no obfuscated classes. */
+    private static void dismissFlyout(@Nullable View row) {
+        if (row == null) return;
+
+        try {
+            View root = row.getRootView();
+            int id = root.getResources().getIdentifier(
+                    "touch_outside",
+                    "id",
+                    row.getContext().getPackageName()
+            );
+            View outside = id == 0 ? null : root.findViewById(id);
+            if (outside != null) {
+                outside.performClick();
+            }
+        } catch (Throwable error) {
+            Log.d(TAG, "Native flyout dismissal unavailable: "
+                    + error.getClass().getSimpleName());
         }
     }
 
@@ -1078,13 +1837,56 @@ public final class PinPlaylistPatch {
             String name =
                     ((Enum<?>) iconEnum).name();
 
-            return name.equals("KEEP")
+            if (name.equals("KEEP")
                     || name.equals("PIN_OUTLINE")
                     || name.equals("KEEP_OFF")
-                    || name.equals("PIN_OFF_OUTLINE");
-        } catch (Throwable error) {
-            return false;
+                    || name.equals("PIN_OFF_OUTLINE")) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+            // Use the structural text fallback below.
         }
+
+        return objectGraphContainsText(
+                menuItem,
+                "speed dial",
+                false
+        );
+    }
+
+    private static boolean isRememberedInjectedLibraryPinMenuItem(
+            @Nullable Object menuItem
+    ) {
+        if (menuItem == null) return false;
+
+        synchronized (injectedLibraryPinMenuItems) {
+            return injectedLibraryPinMenuItems.containsKey(menuItem);
+        }
+    }
+
+    /**
+     * Constant-time hot-path recognition used while native menu presenters are
+     * binding. It deliberately avoids the bounded graph fallback for stock
+     * rows; the full copy-safe recognizer remains available for click recovery.
+     */
+    private static boolean isInjectedLibraryPinMenuItemFast(
+            @Nullable Object menuItem
+    ) {
+        if (menuItem == null) return false;
+        if (isRememberedInjectedLibraryPinMenuItem(menuItem)) return true;
+
+        Object resolvedTitle =
+                invokeStaticByNames(
+                        MENU_ITEM_HELPER_CLASSES,
+                        "e",
+                        menuItem
+                );
+
+        if (resolvedTitle == null) return false;
+
+        String title = resolvedTitle.toString();
+        return title.equals(MENU_TITLE_PIN)
+                || title.equals(MENU_TITLE_UNPIN);
     }
 
     private static boolean isInjectedLibraryPinMenuItem(
@@ -1092,10 +1894,8 @@ public final class PinPlaylistPatch {
     ) {
         if (menuItem == null) return false;
 
-        synchronized (injectedLibraryPinMenuItems) {
-            if (injectedLibraryPinMenuItems.containsKey(menuItem)) {
-                return true;
-            }
+        if (isRememberedInjectedLibraryPinMenuItem(menuItem)) {
+            return true;
         }
 
         /*
@@ -1109,12 +1909,113 @@ public final class PinPlaylistPatch {
                         menuItem
                 );
 
-        if (resolvedTitle == null) return false;
+        if (resolvedTitle != null) {
+            String title = resolvedTitle.toString();
 
-        String title = resolvedTitle.toString();
+            if (title.equals(MENU_TITLE_PIN)
+                    || title.equals(MENU_TITLE_UNPIN)) {
+                return true;
+            }
+        }
 
-        return title.equals(MENU_TITLE_PIN)
-                || title.equals(MENU_TITLE_UNPIN);
+        /*
+         * Obfuscated helper methods can move between releases. The custom title
+         * is embedded in the fresh protobuf, so a bounded graph scan remains a
+         * reliable copy-safe marker when object identity or helper lookup is lost.
+         */
+        return objectGraphContainsText(
+                menuItem,
+                MENU_TITLE_PIN,
+                true
+        ) || objectGraphContainsText(
+                menuItem,
+                MENU_TITLE_UNPIN,
+                true
+        );
+    }
+
+    private static boolean objectGraphContainsText(
+            @Nullable Object root,
+            String expected,
+            boolean exact
+    ) {
+        if (root == null || expected == null) return false;
+
+        IdentityHashMap<Object, Boolean> visited =
+                new IdentityHashMap<>();
+        ArrayList<Object> queue = new ArrayList<>();
+        ArrayList<Integer> depths = new ArrayList<>();
+        queue.add(root);
+        depths.add(0);
+
+        String expectedNormalized = expected.toLowerCase(java.util.Locale.ROOT);
+        int cursor = 0;
+
+        while (cursor < queue.size()
+                && visited.size() < 180) {
+            Object value = queue.get(cursor);
+            int depth = depths.get(cursor);
+            cursor++;
+
+            if (value == null
+                    || visited.put(value, Boolean.TRUE) != null) {
+                continue;
+            }
+
+            if (value instanceof CharSequence) {
+                String text = value.toString();
+                if (exact
+                        ? text.equals(expected)
+                        : text.toLowerCase(java.util.Locale.ROOT)
+                        .contains(expectedNormalized)) {
+                    return true;
+                }
+                continue;
+            }
+
+            Class<?> type = value.getClass();
+            if (type.isPrimitive()
+                    || value instanceof Number
+                    || value instanceof Boolean
+                    || value instanceof Character
+                    || type.isEnum()
+                    || depth >= 6) {
+                continue;
+            }
+
+            if (value instanceof Iterable) {
+                for (Object child : (Iterable<?>) value) {
+                    queue.add(child);
+                    depths.add(depth + 1);
+                }
+                continue;
+            }
+
+            if (type.isArray()) {
+                int length = Array.getLength(value);
+                for (int index = 0; index < length; index++) {
+                    queue.add(Array.get(value, index));
+                    depths.add(depth + 1);
+                }
+                continue;
+            }
+
+            for (Field field : getInstanceFields(type)) {
+                if (field.getType().isPrimitive()) {
+                    continue;
+                }
+
+                try {
+                    field.setAccessible(true);
+                    queue.add(field.get(value));
+                    depths.add(depth + 1);
+                } catch (Throwable ignored) {
+                    // Continue scanning the bounded graph.
+                }
+            }
+        }
+
+        return false;
     }
 
     private static void rememberInjectedLibraryPinMenuItem(
@@ -1133,55 +2034,6 @@ public final class PinPlaylistPatch {
         }
     }
 
-    /**
-     * The stock presenter treats bwzj rows as native toggle items and may
-     * replace their model from sharedToggleMenuItemMutations immediately
-     * before binding the title. For our cloned row, preserve the model state
-     * already written by prepareFlyoutMenu; for every native row, return the
-     * stock state unchanged.
-     */
-    public static boolean guardNativeToggleMutation(
-            @Nullable Object presenter,
-            boolean nativeState,
-            boolean modelState
-    ) {
-        try {
-            return guardNativeToggleMutationInternal(
-                    presenter,
-                    nativeState,
-                    modelState
-            );
-        } catch (Throwable error) {
-            Log.e(TAG, "Failed guarding native menu toggle", error);
-            return nativeState;
-        }
-    }
-
-    private static boolean guardNativeToggleMutationInternal(
-            @Nullable Object presenter,
-            boolean nativeState,
-            boolean modelState
-    ) {
-        Object menuItem =
-                findPresenterMenuItem(presenter);
-        boolean injected =
-                isInjectedLibraryPinMenuItem(menuItem);
-
-        if (injected
-                && nativeToggleGuardLogCount < 8) {
-            nativeToggleGuardLogCount++;
-
-            Log.d(TAG, "SeparatePinToggleGuard"
-                    + " applied=true"
-                    + " nativeState=" + nativeState
-                    + " modelState=" + modelState);
-        }
-
-        return injected
-                ? modelState
-                : nativeState;
-    }
-
     private static boolean hasAnySimpleClassName(
             @Nullable Object value,
             String... expectedNames
@@ -1197,6 +2049,89 @@ public final class PinPlaylistPatch {
         return false;
     }
 
+    private static boolean isUnpinLibraryMenuItem(
+            @Nullable Object menuItem
+    ) {
+        if (menuItem == null) return false;
+
+        Object renderedTitle =
+                invokeStaticByNames(
+                        MENU_ITEM_HELPER_CLASSES,
+                        "e",
+                        menuItem
+                );
+
+        if (renderedTitle != null) {
+            return MENU_TITLE_UNPIN.equals(
+                    renderedTitle.toString()
+            );
+        }
+
+        return objectGraphContainsText(
+                menuItem,
+                MENU_TITLE_UNPIN,
+                true
+        );
+    }
+
+    @Nullable
+    private static ImageView findPresenterIconView(
+            @Nullable Object presenter
+    ) {
+        if (presenter == null) return null;
+
+        Class<?> presenterType = presenter.getClass();
+        Method candidate;
+
+        synchronized (presenterIconGetterCache) {
+            candidate = presenterIconGetterCache.get(presenterType);
+            if (candidate == null
+                    && presenterIconGetterMisses.contains(presenterType)) {
+                return null;
+            }
+        }
+
+        if (candidate == null) {
+            for (Method method : presenterType.getDeclaredMethods()) {
+                if (Modifier.isStatic(method.getModifiers())
+                        || method.getParameterTypes().length != 0
+                        || !ImageView.class.isAssignableFrom(
+                        method.getReturnType()
+                )) {
+                    continue;
+                }
+
+                if (candidate != null) {
+                    synchronized (presenterIconGetterCache) {
+                        presenterIconGetterMisses.add(presenterType);
+                    }
+                    return null;
+                }
+
+                candidate = method;
+            }
+
+            synchronized (presenterIconGetterCache) {
+                if (candidate == null) {
+                    presenterIconGetterMisses.add(presenterType);
+                    return null;
+                }
+
+                candidate.setAccessible(true);
+                presenterIconGetterCache.put(presenterType, candidate);
+            }
+        }
+
+        try {
+            Object value = candidate.invoke(presenter);
+            return value instanceof ImageView
+                    ? (ImageView) value
+                    : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     @Nullable
     private static Object findPresenterMenuItem(
             @Nullable Object presenter
@@ -1209,7 +2144,9 @@ public final class PinPlaylistPatch {
                         "c"
                 );
 
-        if (hasAnySimpleClassName(direct, "bwyn", "buzr")) {
+        if (direct != null
+                && !(direct instanceof View)
+                && !(direct instanceof Context)) {
             return direct;
         }
 
@@ -1228,7 +2165,7 @@ public final class PinPlaylistPatch {
                 field.setAccessible(true);
                 Object value = field.get(presenter);
 
-                if (hasAnySimpleClassName(value, "bwyn", "buzr")) {
+                if (isInjectedLibraryPinMenuItemFast(value)) {
                     return value;
                 }
             } catch (Throwable ignored) {
@@ -1239,282 +2176,988 @@ public final class PinPlaylistPatch {
         return null;
     }
 
-    @Nullable
-    private static Object cloneLibraryPinMenuItem(
-            Object sourceItem,
-            String title,
-            boolean pinned
+    private static List<FreshMenuSchemaCandidate>
+    collectFreshMenuSchemaCandidates(
+            List<?> items
     ) {
-        Object resolvedTitle =
-                invokeStaticByNames(
-                        MENU_ITEM_HELPER_CLASSES,
-                        "e",
-                        sourceItem
-                );
+        ArrayList<FreshMenuSchemaCandidate> candidates =
+                new ArrayList<>();
+        java.util.HashMap<String, Integer> frequencies =
+                new java.util.HashMap<>();
 
-        Object resolvedIcon =
-                invokeStaticByNames(
-                        MENU_ITEM_HELPER_CLASSES,
-                        "d",
-                        sourceItem
-                );
+        for (int index = 0;
+             index < items.size();
+             index++) {
+            Object item = items.get(index);
 
-        MenuComponentSelection selection =
-                findActiveMenuComponent(
-                        sourceItem,
-                        resolvedTitle,
-                        resolvedIcon
-                );
+            if (item == null
+                    || isInjectedLibraryPinMenuItem(item)) {
+                continue;
+            }
 
-        if (selection == null) {
-            logSeparatePinCloneFailure(
-                    "activeVariant",
-                    sourceItem,
-                    null
+            MenuComponentSelection selection =
+                    findActiveMenuComponent(
+                            item,
+                            null,
+                            null
+                    );
+
+            if (selection == null
+                    || isLikelyToggleComponent(
+                    selection.sourceComponent
+            )) {
+                continue;
+            }
+
+            String schemaKey = menuSchemaKey(selection);
+            Integer previous = frequencies.get(schemaKey);
+            frequencies.put(
+                    schemaKey,
+                    previous == null ? 1 : previous + 1
             );
-            logDirectObjectFields(
-                    "SeparatePinVariantProbe",
-                    sourceItem
+
+            candidates.add(
+                    new FreshMenuSchemaCandidate(
+                            index,
+                            item,
+                            selection,
+                            schemaKey
+                    )
             );
-            return null;
         }
 
-        Object sourceComponent =
-                selection.sourceComponent;
+        java.util.Collections.sort(
+                candidates,
+                new java.util.Comparator<FreshMenuSchemaCandidate>() {
+                    @Override
+                    public int compare(
+                            FreshMenuSchemaCandidate left,
+                            FreshMenuSchemaCandidate right
+                    ) {
+                        int leftFrequency = frequencies.get(left.schemaKey);
+                        int rightFrequency = frequencies.get(right.schemaKey);
 
-        Log.d(TAG, "SeparatePinComponent"
-                + " selected=true"
-                + " parentField="
+                        if (leftFrequency != rightFrequency) {
+                            return Integer.compare(
+                                    rightFrequency,
+                                    leftFrequency
+                            );
+                        }
+
+                        boolean leftHasPlaylistId =
+                                !collectCanonicalPlaylistIds(
+                                        left.item,
+                                        6
+                                ).isEmpty();
+                        boolean rightHasPlaylistId =
+                                !collectCanonicalPlaylistIds(
+                                        right.item,
+                                        6
+                                ).isEmpty();
+
+                        if (leftHasPlaylistId != rightHasPlaylistId) {
+                            return leftHasPlaylistId ? -1 : 1;
+                        }
+
+                        if (left.selection.score
+                                != right.selection.score) {
+                            return Integer.compare(
+                                    right.selection.score,
+                                    left.selection.score
+                            );
+                        }
+
+                        return Integer.compare(
+                                left.index,
+                                right.index
+                        );
+                    }
+                }
+        );
+
+        for (FreshMenuSchemaCandidate candidate : candidates) {
+            Log.d(TAG, "NativePinSchemaCandidate"
+                    + " index=" + candidate.index
+                    + " frequency="
+                    + frequencies.get(candidate.schemaKey)
+                    + " schema=" + candidate.schemaKey
+                    + " score=" + candidate.selection.score
+                    + " ids="
+                    + collectCanonicalPlaylistIds(
+                    candidate.item,
+                    6
+            ));
+        }
+
+        return candidates;
+    }
+
+    private static String menuSchemaKey(
+            MenuComponentSelection selection
+    ) {
+        return selection.sourceComponent.getClass().getName()
+                + "|"
                 + (selection.parentField == null
                 ? "<item>"
                 : selection.parentField.getName())
-                + " componentType="
-                + objectTypeName(sourceComponent)
-                + " titleField="
+                + "|"
                 + selection.titleField.getName()
-                + " iconField="
-                + selection.iconField.getName()
-                + " score=" + selection.score);
+                + "|"
+                + selection.iconField.getName();
+    }
 
-        Object componentBuilder =
-                invokeNoArgObject(
-                        sourceComponent,
-                        "toBuilder"
-                );
+    @Nullable
+    private static Object createFreshLibraryPinMenuItem(
+            Object schemaItem,
+            MenuComponentSelection selection,
+            @Nullable Object preferredIconSource,
+            String title,
+            boolean pinned
+    ) {
+        Object schemaComponent =
+                selection.sourceComponent;
 
-        if (componentBuilder == null) {
-            logSeparatePinCloneFailure(
-                    "componentBuilder",
-                    sourceItem,
-                    sourceComponent
+        Object schemaTitle;
+        Object schemaIcon;
+
+        try {
+            selection.titleField.setAccessible(true);
+            schemaTitle =
+                    selection.titleField.get(
+                            schemaComponent
+                    );
+
+            selection.iconField.setAccessible(true);
+            schemaIcon =
+                    selection.iconField.get(
+                            schemaComponent
+                    );
+        } catch (Throwable error) {
+            Log.e(
+                    TAG,
+                    "Could not read native menu schema fields",
+                    error
             );
-            return null;
-        }
-
-        if (!invokeNoArgVoid(
-                componentBuilder,
-                "copyOnWrite"
-        )) {
-            logSeparatePinCloneFailure(
-                    "componentCopyOnWrite",
-                    sourceItem,
-                    sourceComponent
-            );
-            return null;
-        }
-
-        Object componentInstance =
-                readFieldByName(
-                        componentBuilder,
-                        "instance"
-                );
-
-        if (componentInstance == null) {
-            logSeparatePinCloneFailure(
-                    "componentInstance",
-                    sourceItem,
-                    sourceComponent
+            logFreshModelFailure(
+                    "schemaRead",
+                    schemaItem,
+                    schemaComponent
             );
             return null;
         }
 
         Object textMessage =
-                createSimpleTextMessage(title);
+                createFreshTitleMessage(
+                        schemaTitle,
+                        title
+                );
 
-        if (textMessage == null) {
-            logSeparatePinCloneFailure(
-                    "title",
-                    sourceItem,
-                    sourceComponent
+        if (textMessage == null
+                || !selection.titleField.getType()
+                .isInstance(textMessage)) {
+            logFreshModelFailure(
+                    "freshTitle",
+                    schemaItem,
+                    schemaComponent
             );
             return null;
         }
 
-        Object sourceIcon;
-
-        try {
-            selection.iconField.setAccessible(true);
-            sourceIcon =
-                    selection.iconField.get(
-                            sourceComponent
-                    );
-        } catch (Throwable error) {
-            Log.e(
-                    TAG,
-                    "Could not read active Speed Dial icon field",
-                    error
-            );
-            logSeparatePinCloneFailure(
-                    "sourceIconRead",
-                    sourceItem,
-                    sourceComponent
-            );
-            return null;
-        }
+        Object iconSchema =
+                preferredIconSource != null
+                        && selection.iconField.getType()
+                        .isInstance(preferredIconSource)
+                        ? preferredIconSource
+                        : schemaIcon;
 
         Object iconMessage =
-                clonePinMenuIconMessage(
-                        sourceIcon,
-                        pinned
-                );
+                createFreshIconMessage(iconSchema);
 
+        /*
+         * Protobuf icon messages are immutable value objects. Reusing only
+         * that value is safe and does not copy the source menu item, command,
+         * endpoint, or renderer graph. It is a compatibility fallback when
+         * the icon message exposes no accessible builder.
+         */
         if (iconMessage == null) {
-            logSeparatePinCloneFailure(
-                    "icon",
-                    sourceItem,
-                    sourceComponent
+            iconMessage = iconSchema;
+        }
+
+        if (iconMessage == null
+                || !selection.iconField.getType()
+                .isInstance(iconMessage)) {
+            logFreshModelFailure(
+                    "freshIcon",
+                    schemaItem,
+                    schemaComponent
             );
             return null;
         }
 
-        boolean componentWrites =
-                writeFieldByName(
-                        componentInstance,
+        FreshMessageBuilder componentBuilder =
+                beginFreshMessage(
+                        schemaComponent
+                );
+
+        if (componentBuilder == null) {
+            logFreshModelFailure(
+                    "componentBuilder",
+                    schemaItem,
+                    schemaComponent
+            );
+            return null;
+        }
+
+        copyDeclaredPrimitiveShape(
+                schemaComponent,
+                componentBuilder.instance
+        );
+
+        int populatedReferenceCount =
+                populateFreshReferenceSkeleton(
+                        schemaComponent,
+                        componentBuilder.instance,
+                        2,
                         selection.titleField.getName(),
-                        textMessage
-                )
-                        && writeFieldByName(
-                        componentInstance,
-                        selection.iconField.getName(),
-                        iconMessage
+                        selection.iconField.getName()
                 );
 
-        if (!componentWrites) {
-            logSeparatePinCloneFailure(
+        if (populatedReferenceCount == 0) {
+            logFreshModelFailure(
+                    "noReferenceEnvelope",
+                    schemaItem,
+                    schemaComponent
+            );
+            return null;
+        }
+
+        if (!writeFieldByName(
+                componentBuilder.instance,
+                selection.titleField.getName(),
+                textMessage
+        ) || !writeFieldByName(
+                componentBuilder.instance,
+                selection.iconField.getName(),
+                iconMessage
+        )) {
+            logFreshModelFailure(
                     "componentWrites",
-                    sourceItem,
-                    sourceComponent
+                    schemaItem,
+                    schemaComponent
             );
             return null;
         }
 
-        Object componentClone =
-                invokeNoArgObject(
-                        componentBuilder,
-                        "build"
-                );
+        Object freshComponent =
+                componentBuilder.build();
 
-        if (componentClone == null) {
-            logSeparatePinCloneFailure(
+        if (freshComponent == null) {
+            logFreshModelFailure(
                     "componentBuild",
-                    sourceItem,
-                    sourceComponent
+                    schemaItem,
+                    schemaComponent
             );
             return null;
         }
 
-        Object clonedItem;
+        Object freshItem;
 
         if (selection.parentField == null) {
-            clonedItem = componentClone;
+            freshItem = freshComponent;
         } else {
-            Object itemBuilder =
-                    invokeNoArgObject(
-                            sourceItem,
-                            "toBuilder"
+            FreshMessageBuilder itemBuilder =
+                    beginFreshMessage(
+                            schemaItem
                     );
 
             if (itemBuilder == null) {
-                logSeparatePinCloneFailure(
+                logFreshModelFailure(
                         "itemBuilder",
-                        sourceItem,
-                        sourceComponent
+                        schemaItem,
+                        schemaComponent
                 );
                 return null;
             }
 
-            if (!invokeNoArgVoid(
-                    itemBuilder,
-                    "copyOnWrite"
-            )) {
-                logSeparatePinCloneFailure(
-                        "itemCopyOnWrite",
-                        sourceItem,
-                        sourceComponent
-                );
-                return null;
-            }
-
-            Object itemInstance =
-                    readFieldByName(
-                            itemBuilder,
-                            "instance"
-                    );
-
-            if (itemInstance == null) {
-                logSeparatePinCloneFailure(
-                        "itemInstance",
-                        sourceItem,
-                        sourceComponent
-                );
-                return null;
-            }
+            /*
+             * Copy only primitive oneof/presence/style fields declared directly
+             * by the generated message class. Reference fields stay at their
+             * default values, so no inherited native command can survive.
+             */
+            copyDeclaredPrimitiveShape(
+                    schemaItem,
+                    itemBuilder.instance
+            );
 
             if (!writeFieldByName(
-                    itemInstance,
+                    itemBuilder.instance,
                     selection.parentField.getName(),
-                    componentClone
+                    freshComponent
             )) {
-                logSeparatePinCloneFailure(
+                logFreshModelFailure(
                         "itemComponentWrite",
-                        sourceItem,
-                        sourceComponent
+                        schemaItem,
+                        schemaComponent
                 );
                 return null;
             }
 
-            clonedItem =
-                    invokeNoArgObject(
-                            itemBuilder,
-                            "build"
-                    );
+            freshItem =
+                    itemBuilder.build();
         }
 
-        if (clonedItem == null) {
-            logSeparatePinCloneFailure(
+        if (freshItem == null) {
+            logFreshModelFailure(
                     "itemBuild",
-                    sourceItem,
-                    sourceComponent
+                    schemaItem,
+                    schemaComponent
+            );
+            return null;
+        }
+
+        /*
+         * Enforce the no-clone contract. The new object graph must not retain
+         * any source item/component/title/icon identity.
+         */
+        if (objectGraphContainsIdentity(
+                freshItem,
+                schemaItem
+        ) || objectGraphContainsIdentity(
+                freshItem,
+                schemaComponent
+        ) || objectGraphContainsIdentity(
+                freshItem,
+                schemaTitle
+        )) {
+            logFreshModelFailure(
+                    "sourceIdentityLeak",
+                    schemaItem,
+                    schemaComponent
+            );
+            return null;
+        }
+
+        if (!objectGraphContainsText(
+                freshItem,
+                title,
+                true
+        )) {
+            logFreshModelFailure(
+                    "titleValidation",
+                    schemaItem,
+                    schemaComponent
             );
             return null;
         }
 
         rememberInjectedLibraryPinMenuItem(
-                clonedItem
+                freshItem
         );
 
-        Log.d(TAG, "SeparatePinClone"
+        Log.d(TAG, "SeparatePinFreshModel"
                 + " success=true"
-                + " itemType=" + objectTypeName(clonedItem)
-                + " componentType=" + objectTypeName(componentClone)
+                + " itemType="
+                + objectTypeName(freshItem)
+                + " componentType="
+                + objectTypeName(freshComponent)
                 + " parentField="
                 + (selection.parentField == null
                 ? "<item>"
                 : selection.parentField.getName())
+                + " iconSourceType="
+                + objectTypeName(iconSchema)
                 + " pinned=" + pinned
                 + " title=" + title);
 
-        return clonedItem;
+        return freshItem;
+    }
+
+    @Nullable
+    private static Object findNativePinIconSource(
+            List<?> items
+    ) {
+        for (Object item : items) {
+            if (item == null) continue;
+
+            MenuComponentSelection selection =
+                    findActiveMenuComponent(
+                            item,
+                            null,
+                            null
+                    );
+
+            if (selection == null) continue;
+
+            String renderedTitle =
+                    readRenderedComponentTitle(
+                            selection
+                    );
+
+            if ((renderedTitle != null
+                    && renderedTitle
+                    .toLowerCase(java.util.Locale.ROOT)
+                    .contains("speed dial"))
+                    || isSpeedDialMenuItem(item)) {
+                try {
+                    selection.iconField.setAccessible(true);
+                    return selection.iconField.get(
+                            selection.sourceComponent
+                    );
+                } catch (Throwable ignored) {
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    @Nullable
+    private static String readRenderedComponentTitle(
+            MenuComponentSelection selection
+    ) {
+        try {
+            selection.titleField.setAccessible(true);
+            Object titleMessage =
+                    selection.titleField.get(
+                            selection.sourceComponent
+                    );
+
+            String direct =
+                    titleMessage == null
+                            ? null
+                            : readStringField(
+                            titleMessage
+                    );
+
+            if (direct != null
+                    && !direct.trim().isEmpty()) {
+                return direct;
+            }
+
+            return titleMessage == null
+                    ? null
+                    : renderTextMessage(
+                    titleMessage
+            );
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static boolean isLikelyToggleComponent(
+            Object component
+    ) {
+        /*
+         * Boolean fields are common presence/state fields in generated
+         * protobuf messages and do not identify a toggle renderer. Restrict
+         * this guard to the one known toggle component class. Future adapters
+         * can add another exact class name without excluding normal rows.
+         */
+        return "bwzj".equals(
+                component.getClass().getSimpleName()
+        );
+    }
+
+    @Nullable
+    private static FreshMessageBuilder beginFreshMessage(
+            Object schemaMessage
+    ) {
+        Class<?> messageType =
+                schemaMessage.getClass();
+
+        Object builder =
+                invokeStaticNoArgObject(
+                        messageType,
+                        "newBuilder"
+                );
+
+        if (builder == null) {
+            Object defaultInstance =
+                    invokeNoArgObject(
+                            schemaMessage,
+                            "getDefaultInstanceForType"
+                    );
+
+            if (defaultInstance == null) {
+                defaultInstance =
+                        invokeStaticNoArgObject(
+                                messageType,
+                                "getDefaultInstance"
+                        );
+            }
+
+            if (defaultInstance == null) {
+                defaultInstance =
+                        findStaticDefaultMessage(
+                                messageType
+                        );
+            }
+
+            if (defaultInstance == null) {
+                return null;
+            }
+
+            builder =
+                    invokeNoArgObject(
+                            defaultInstance,
+                            "toBuilder"
+                    );
+        }
+
+        if (builder == null
+                || !invokeNoArgVoid(
+                builder,
+                "copyOnWrite"
+        )) {
+            return null;
+        }
+
+        Object instance =
+                readFieldByName(
+                        builder,
+                        "instance"
+                );
+
+        if (instance == null
+                || !messageType.isInstance(instance)) {
+            return null;
+        }
+
+        return new FreshMessageBuilder(
+                builder,
+                instance
+        );
+    }
+
+    @Nullable
+    private static Object invokeStaticNoArgObject(
+            Class<?> type,
+            String methodName
+    ) {
+        for (Class<?> current = type;
+             current != null
+                     && current != Object.class;
+             current = current.getSuperclass()) {
+            try {
+                Method method =
+                        current.getDeclaredMethod(
+                                methodName
+                        );
+
+                if (!Modifier.isStatic(
+                        method.getModifiers()
+                ) || method.getParameterTypes().length != 0
+                        || method.getReturnType() == Void.TYPE) {
+                    continue;
+                }
+
+                method.setAccessible(true);
+                return method.invoke(null);
+            } catch (NoSuchMethodException ignored) {
+                // Continue through the hierarchy.
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    @Nullable
+    private static Object findStaticDefaultMessage(
+            Class<?> messageType
+    ) {
+        for (Field field :
+                messageType.getDeclaredFields()) {
+            if (!Modifier.isStatic(
+                    field.getModifiers()
+            ) || !messageType.isAssignableFrom(
+                    field.getType()
+            )) {
+                continue;
+            }
+
+            try {
+                field.setAccessible(true);
+                Object value = field.get(null);
+
+                if (messageType.isInstance(value)) {
+                    return value;
+                }
+            } catch (Throwable ignored) {
+                // Try the next static message field.
+            }
+        }
+
+        return null;
+    }
+
+    private static void copyDeclaredPrimitiveShape(
+            Object source,
+            Object target
+    ) {
+        Class<?> type = source.getClass();
+
+        if (!type.equals(target.getClass())) {
+            return;
+        }
+
+        for (Field field :
+                type.getDeclaredFields()) {
+            int modifiers =
+                    field.getModifiers();
+
+            if (Modifier.isStatic(modifiers)
+                    || Modifier.isFinal(modifiers)
+                    || !field.getType().isPrimitive()) {
+                continue;
+            }
+
+            try {
+                field.setAccessible(true);
+                field.set(
+                        target,
+                        field.get(source)
+                );
+            } catch (Throwable ignored) {
+                // A single optional primitive is not required to construct row.
+            }
+        }
+    }
+
+    @Nullable
+    private static Object createFreshTitleMessage(
+            @Nullable Object schemaTitle,
+            String text
+    ) {
+        Object helperMessage =
+                createSimpleTextMessage(text);
+
+        if (helperMessage != null
+                && schemaTitle != null
+                && schemaTitle.getClass()
+                .isInstance(helperMessage)) {
+            return helperMessage;
+        }
+
+        if (schemaTitle == null) {
+            return null;
+        }
+
+        FreshMessageBuilder builder =
+                beginFreshMessage(schemaTitle);
+
+        if (builder == null) {
+            return null;
+        }
+
+        copyDeclaredPrimitiveShape(
+                schemaTitle,
+                builder.instance
+        );
+
+        boolean wroteText = false;
+
+        for (Class<?> current =
+                     builder.instance.getClass();
+             current != null && current != Object.class;
+             current = current.getSuperclass()) {
+            for (Field field :
+                    current.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers())
+                        || Modifier.isFinal(field.getModifiers())
+                        || field.getType() != String.class) {
+                    continue;
+                }
+
+                try {
+                    field.setAccessible(true);
+                    field.set(builder.instance, text);
+                    wroteText = true;
+                    break;
+                } catch (Throwable ignored) {
+                    // Try another String field.
+                }
+            }
+
+            if (wroteText) break;
+        }
+
+        if (!wroteText) {
+            return null;
+        }
+
+        Object message = builder.build();
+
+        if (message == null
+                || !objectGraphContainsText(
+                message,
+                text,
+                true
+        )) {
+            return null;
+        }
+
+        return message;
+    }
+
+    private static int populateFreshReferenceSkeleton(
+            Object source,
+            Object target,
+            int depth,
+            String... excludedFieldNames
+    ) {
+        if (source == null
+                || target == null
+                || depth <= 0
+                || source.getClass() != target.getClass()) {
+            return 0;
+        }
+
+        int populatedCount = 0;
+
+        java.util.HashSet<String> excluded =
+                new java.util.HashSet<>();
+
+        if (excludedFieldNames != null) {
+            java.util.Collections.addAll(
+                    excluded,
+                    excludedFieldNames
+            );
+        }
+
+        for (Field field :
+                source.getClass().getDeclaredFields()) {
+            int modifiers = field.getModifiers();
+
+            if (Modifier.isStatic(modifiers)
+                    || Modifier.isFinal(modifiers)
+                    || field.getType().isPrimitive()
+                    || excluded.contains(field.getName())
+                    || field.getType() == String.class
+                    || field.getType().isArray()
+                    || Iterable.class.isAssignableFrom(
+                    field.getType()
+            ) || java.util.Map.class.isAssignableFrom(
+                    field.getType()
+            )) {
+                continue;
+            }
+
+            Object sourceValue;
+
+            try {
+                field.setAccessible(true);
+                sourceValue = field.get(source);
+            } catch (Throwable ignored) {
+                continue;
+            }
+
+            if (sourceValue == null) {
+                continue;
+            }
+
+            if (sourceValue instanceof Enum) {
+                try {
+                    field.set(target, sourceValue);
+                    populatedCount++;
+                } catch (Throwable ignored) {
+                    // Optional enum shape only.
+                }
+                continue;
+            }
+
+            FreshMessageBuilder childBuilder =
+                    beginFreshMessage(sourceValue);
+
+            if (childBuilder == null) {
+                continue;
+            }
+
+            copyDeclaredPrimitiveShape(
+                    sourceValue,
+                    childBuilder.instance
+            );
+
+            int nestedCount =
+                    populateFreshReferenceSkeleton(
+                            sourceValue,
+                            childBuilder.instance,
+                            depth - 1
+                    );
+
+            Object freshChild = childBuilder.build();
+
+            if (freshChild == null
+                    || !field.getType()
+                    .isInstance(freshChild)) {
+                continue;
+            }
+
+            try {
+                field.set(target, freshChild);
+                populatedCount += 1 + nestedCount;
+            } catch (Throwable ignored) {
+                // A non-required reference may remain at its default value.
+            }
+        }
+
+        return populatedCount;
+    }
+
+    @Nullable
+    private static Object createFreshIconMessage(
+            @Nullable Object schemaIcon
+    ) {
+        if (schemaIcon == null) return null;
+
+        FreshMessageBuilder iconBuilder =
+                beginFreshMessage(
+                        schemaIcon
+                );
+
+        if (iconBuilder == null) {
+            return null;
+        }
+
+        copyDeclaredPrimitiveShape(
+                schemaIcon,
+                iconBuilder.instance
+        );
+
+        return iconBuilder.build();
+    }
+
+    private static boolean objectGraphContainsIdentity(
+            @Nullable Object root,
+            @Nullable Object expected
+    ) {
+        if (root == null || expected == null) {
+            return false;
+        }
+
+        IdentityHashMap<Object, Boolean> visited =
+                new IdentityHashMap<>();
+        ArrayList<Object> queue =
+                new ArrayList<>();
+        ArrayList<Integer> depths =
+                new ArrayList<>();
+
+        queue.add(root);
+        depths.add(0);
+
+        int cursor = 0;
+
+        while (cursor < queue.size()
+                && visited.size() < 180) {
+            Object value =
+                    queue.get(cursor);
+            int depth =
+                    depths.get(cursor);
+            cursor++;
+
+            if (value == null
+                    || visited.put(
+                    value,
+                    Boolean.TRUE
+            ) != null) {
+                continue;
+            }
+
+            if (value == expected) {
+                return true;
+            }
+
+            Class<?> type =
+                    value.getClass();
+
+            if (isTerminalType(type)
+                    || depth >= 6) {
+                continue;
+            }
+
+            if (value instanceof Iterable) {
+                for (Object child :
+                        (Iterable<?>) value) {
+                    queue.add(child);
+                    depths.add(depth + 1);
+                }
+                continue;
+            }
+
+            if (type.isArray()) {
+                int length =
+                        Array.getLength(value);
+
+                for (int index = 0;
+                     index < length;
+                     index++) {
+                    queue.add(
+                            Array.get(
+                                    value,
+                                    index
+                            )
+                    );
+                    depths.add(depth + 1);
+                }
+                continue;
+            }
+
+            for (Field field :
+                    getInstanceFields(type)) {
+                if (field.getType().isPrimitive()) {
+                    continue;
+                }
+
+                try {
+                    field.setAccessible(true);
+                    queue.add(
+                            field.get(value)
+                    );
+                    depths.add(depth + 1);
+                } catch (Throwable ignored) {
+                    // Keep the validation bounded and best-effort.
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static void logFreshModelFailure(
+            String stage,
+            @Nullable Object schemaItem,
+            @Nullable Object schemaComponent
+    ) {
+        Log.d(TAG, "SeparatePinFreshModel"
+                + " success=false"
+                + " stage=" + stage
+                + " itemType="
+                + objectTypeName(schemaItem)
+                + " componentType="
+                + objectTypeName(schemaComponent));
+    }
+
+    private static final class FreshMessageBuilder {
+        final Object builder;
+        final Object instance;
+
+        FreshMessageBuilder(
+                Object builder,
+                Object instance
+        ) {
+            this.builder = builder;
+            this.instance = instance;
+        }
+
+        @Nullable
+        Object build() {
+            return invokeNoArgObject(
+                    builder,
+                    "build"
+            );
+        }
     }
 
     @Nullable
@@ -1589,7 +3232,6 @@ public final class PinPlaylistPatch {
         Field exactTitleField = null;
         Field firstIconField = null;
         Field exactIconField = null;
-        int commandCount = 0;
 
         for (Field field :
                 getInstanceFields(candidate.getClass())) {
@@ -1608,41 +3250,50 @@ public final class PinPlaylistPatch {
 
             if (value == null) continue;
 
-            String typeName =
-                    value.getClass().getSimpleName();
+            String rendered = readStringField(value);
 
-            if (typeName.equals("bsmc")
-                    || typeName.equals("bqph")) {
+            if (rendered == null) {
+                rendered = renderTextMessage(value);
+            }
+
+            /*
+             * Generated text messages often keep their direct String field
+             * empty because the visible text is represented by another
+             * protobuf arm. The presence of a declared String field is still a
+             * reliable schema signal even when no semantic text can be read.
+             */
+            boolean textSchema =
+                    rendered != null
+                            || hasDeclaredInstanceFieldOfType(
+                            value.getClass(),
+                            String.class
+                    );
+
+            if (textSchema) {
                 if (firstTitleField == null) {
                     firstTitleField = field;
                 }
 
-                String rendered =
-                        renderTextMessage(value);
-
                 if (resolvedTitle != null
+                        && rendered != null
                         && resolvedTitle.equals(rendered)) {
                     exactTitleField = field;
                 }
-            } else if (typeName.equals("btcx")
-                    || typeName.equals("brga")) {
+                continue;
+            }
+
+            Integer iconNumber =
+                    readIntegerField(value, "c");
+
+            if (iconNumber != null) {
                 if (firstIconField == null) {
                     firstIconField = field;
                 }
-
-                Integer iconNumber =
-                        readIntegerField(
-                                value,
-                                "c"
-                        );
 
                 if (resolvedIconNumber != null
                         && resolvedIconNumber.equals(iconNumber)) {
                     exactIconField = field;
                 }
-            } else if (typeName.equals("bqco")
-                    || typeName.equals("boht")) {
-                commandCount++;
             }
         }
 
@@ -1671,10 +3322,6 @@ public final class PinPlaylistPatch {
             score += 4;
         }
 
-        if (commandCount > 0) {
-            score += 1;
-        }
-
         return new MenuComponentSelection(
                 parentField,
                 candidate,
@@ -1687,28 +3334,48 @@ public final class PinPlaylistPatch {
     private static List<Field> getInstanceFields(
             Class<?> type
     ) {
-        ArrayList<Field> fields =
-                new ArrayList<>();
+        synchronized (instanceFieldCache) {
+            List<Field> cached = instanceFieldCache.get(type);
+            if (cached != null) return cached;
+        }
+
+        ArrayList<Field> fields = new ArrayList<>();
 
         for (Class<?> current = type;
-             current != null
-                     && current != Object.class;
+             current != null && current != Object.class;
              current = current.getSuperclass()) {
-            Field[] declaredFields =
-                    current.getDeclaredFields();
+            Field[] declaredFields;
+            try {
+                declaredFields = current.getDeclaredFields();
+            } catch (Throwable ignored) {
+                continue;
+            }
 
             for (Field field : declaredFields) {
-                if (Modifier.isStatic(
-                        field.getModifiers()
-                ) || field.isSynthetic()) {
+                if (Modifier.isStatic(field.getModifiers())
+                        || field.isSynthetic()) {
                     continue;
                 }
 
+                try {
+                    field.setAccessible(true);
+                } catch (Throwable ignored) {
+                    // Access can still be retried by the caller.
+                }
                 fields.add(field);
             }
         }
 
-        return fields;
+        List<Field> result = Collections.unmodifiableList(fields);
+
+        synchronized (instanceFieldCache) {
+            if (instanceFieldCache.size() >= MAX_INSTANCE_FIELD_CACHE) {
+                instanceFieldCache.clear();
+            }
+            instanceFieldCache.put(type, result);
+        }
+
+        return result;
     }
 
     @Nullable
@@ -1727,6 +3394,28 @@ public final class PinPlaylistPatch {
                 : null;
     }
 
+    private static boolean hasDeclaredInstanceFieldOfType(
+            Class<?> type,
+            Class<?> expectedType
+    ) {
+        for (Class<?> current = type;
+             current != null && current != Object.class;
+             current = current.getSuperclass()) {
+            for (Field field : current.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+
+                if (expectedType.equals(field.getType())) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+
     @Nullable
     private static String renderTextMessage(
             Object textMessage
@@ -1741,6 +3430,31 @@ public final class PinPlaylistPatch {
         return rendered == null
                 ? null
                 : rendered.toString();
+    }
+
+    @Nullable
+    private static String readStringField(
+            Object message
+    ) {
+        for (Field field : getInstanceFields(message.getClass())) {
+            if (!String.class.equals(field.getType())) {
+                continue;
+            }
+
+            try {
+                field.setAccessible(true);
+                Object value = field.get(message);
+
+                if (value instanceof String
+                        && !((String) value).trim().isEmpty()) {
+                    return (String) value;
+                }
+            } catch (Throwable ignored) {
+                // Try the next field.
+            }
+        }
+
+        return null;
     }
 
     private static void logDirectObjectFields(
@@ -1776,19 +3490,6 @@ public final class PinPlaylistPatch {
         Log.d(TAG, output.toString());
     }
 
-    private static void logSeparatePinCloneFailure(
-            String stage,
-            @Nullable Object sourceItem,
-            @Nullable Object sourceComponent
-    ) {
-        Log.d(TAG, "SeparatePinClone"
-                + " success=false"
-                + " stage=" + stage
-                + " itemType=" + objectTypeName(sourceItem)
-                + " componentType="
-                + objectTypeName(sourceComponent));
-    }
-
     @Nullable
     private static Object createSimpleTextMessage(
             String text
@@ -1801,7 +3502,7 @@ public final class PinPlaylistPatch {
                 );
 
         if (message == null) {
-            Log.d(TAG, "SeparatePinClone"
+            Log.d(TAG, "SeparatePinFreshModel"
                     + " success=false"
                     + " stage=textFactory"
                     + " text=" + text);
@@ -1810,132 +3511,22 @@ public final class PinPlaylistPatch {
         return message;
     }
 
-    @Nullable
-    private static Object clonePinMenuIconMessage(
-            @Nullable Object sourceIcon,
-            boolean pinned
-    ) {
-        if (sourceIcon == null) {
-            Log.d(TAG, "SeparatePinClone"
-                    + " success=false"
-                    + " stage=noSourceIcon");
-            return null;
-        }
+    private static final class FreshMenuSchemaCandidate {
+        final int index;
+        final Object item;
+        final MenuComponentSelection selection;
+        final String schemaKey;
 
-        try {
-            Object iconEnum =
-                    findEnumConstant(
-                            ICON_ENUM_CLASSES,
-                            pinned
-                                    ? "PIN_OFF_OUTLINE"
-                                    : "PIN_OUTLINE"
-                    );
-
-            if (iconEnum == null) {
-                Log.d(TAG, "SeparatePinClone"
-                        + " success=false"
-                        + " stage=iconEnum");
-                return null;
-            }
-
-            Object numberObject =
-                    invokeNoArgObject(
-                            iconEnum,
-                            "getNumber"
-                    );
-
-            if (!(numberObject instanceof Integer)) {
-                Log.d(TAG, "SeparatePinClone"
-                        + " success=false"
-                        + " stage=iconNumber"
-                        + " enum=" + iconEnum);
-                return null;
-            }
-
-            Object iconBuilder =
-                    invokeNoArgObject(
-                            sourceIcon,
-                            "toBuilder"
-                    );
-
-            if (iconBuilder == null) {
-                Log.d(TAG, "SeparatePinClone"
-                        + " success=false"
-                        + " stage=iconBuilder"
-                        + " iconType="
-                        + objectTypeName(sourceIcon));
-                return null;
-            }
-
-            if (!invokeNoArgVoid(
-                    iconBuilder,
-                    "copyOnWrite"
-            )) {
-                Log.d(TAG, "SeparatePinClone"
-                        + " success=false"
-                        + " stage=iconCopyOnWrite");
-                return null;
-            }
-
-            Object iconInstance =
-                    readFieldByName(
-                            iconBuilder,
-                            "instance"
-                    );
-
-            if (iconInstance == null) {
-                Log.d(TAG, "SeparatePinClone"
-                        + " success=false"
-                        + " stage=iconInstance");
-                return null;
-            }
-
-            int iconBits = 0;
-            Object iconBitsObject =
-                    readFieldByName(
-                            iconInstance,
-                            "b"
-                    );
-
-            if (iconBitsObject instanceof Integer) {
-                iconBits = (Integer) iconBitsObject;
-            }
-
-            if (!writeFieldByName(
-                    iconInstance,
-                    "c",
-                    numberObject
-            ) || !writeFieldByName(
-                    iconInstance,
-                    "b",
-                    iconBits | 0x1
-            )) {
-                Log.d(TAG, "SeparatePinClone"
-                        + " success=false"
-                        + " stage=iconWrites");
-                return null;
-            }
-
-            Object iconClone =
-                    invokeNoArgObject(
-                            iconBuilder,
-                            "build"
-                    );
-
-            if (iconClone == null) {
-                Log.d(TAG, "SeparatePinClone"
-                        + " success=false"
-                        + " stage=iconBuild");
-            }
-
-            return iconClone;
-        } catch (Throwable error) {
-            Log.e(
-                    TAG,
-                    "Failed cloning Library pin menu icon",
-                    error
-            );
-            return null;
+        FreshMenuSchemaCandidate(
+                int index,
+                Object item,
+                MenuComponentSelection selection,
+                String schemaKey
+        ) {
+            this.index = index;
+            this.item = item;
+            this.selection = selection;
+            this.schemaKey = schemaKey;
         }
     }
 
@@ -1981,6 +3572,118 @@ public final class PinPlaylistPatch {
     }
 
     /**
+     * Applies the extension-owned Library Pin/Unpin icon after the native
+     * MenuItemPresenter has completed its normal bind.
+     *
+     * The row model remains a factory-created native command row. Only the
+     * rendered ImageView is changed, so this path does not depend on YouTube
+     * Music's icon enum names, enum numbers, or the state of Speed Dial.
+     */
+    public static void styleInjectedLibraryPinPresenter(
+            @Nullable Object presenter
+    ) {
+        if (!isFeatureEnabled()
+                || !isSeparateMenuItemEnabled()
+                || presenter == null) {
+            return;
+        }
+
+        try {
+            Object menuItem = findPresenterMenuItem(presenter);
+
+            if (!isInjectedLibraryPinMenuItemFast(menuItem)) {
+                return;
+            }
+
+            /*
+             * Native protobuf/render paths may copy the inserted model. Once
+             * the custom title identifies that bound copy, remember it so the
+             * icon and click hooks become identity-only for the rest of the
+             * flyout lifetime.
+             */
+            rememberInjectedLibraryPinMenuItem(menuItem);
+            String activePlaylistId = activeFlyoutPlaylistId;
+            if (PinStore.isSupportedPlaylistId(activePlaylistId)) {
+                synchronized (flyoutObjectIds) {
+                    flyoutObjectIds.put(menuItem, activePlaylistId);
+                }
+            }
+
+            ImageView iconView = findPresenterIconView(presenter);
+
+            if (iconView == null) {
+                if (flyoutMenuIconLogCount < 8) {
+                    flyoutMenuIconLogCount++;
+                    Log.d(TAG, "LibraryPinMenuIcon applied=false"
+                            + " reason=noNativeIconView"
+                            + " presenterType="
+                            + objectTypeName(presenter));
+                }
+                return;
+            }
+
+            boolean unpinAction =
+                    isUnpinLibraryMenuItem(menuItem);
+
+            int iconSize = Math.max(
+                    iconView.getWidth(),
+                    iconView.getHeight()
+            );
+
+            ViewGroup.LayoutParams layoutParams =
+                    iconView.getLayoutParams();
+
+            if (iconSize <= 0 && layoutParams != null) {
+                iconSize = Math.max(
+                        layoutParams.width,
+                        layoutParams.height
+                );
+            }
+
+            if (iconSize <= 0) {
+                float density =
+                        iconView.getResources()
+                                .getDisplayMetrics()
+                                .density;
+                iconSize = Math.max(
+                        1,
+                        Math.round(24.0f * density)
+                );
+            }
+
+            LibraryPinMenuDrawable drawable =
+                    new LibraryPinMenuDrawable(
+                            unpinAction,
+                            iconSize
+                    );
+
+            ColorFilter existingColorFilter =
+                    iconView.getColorFilter();
+
+            if (existingColorFilter != null) {
+                drawable.setColorFilter(existingColorFilter);
+            }
+
+            iconView.setImageDrawable(drawable);
+            iconView.setVisibility(View.VISIBLE);
+
+            if (flyoutMenuIconLogCount < 8) {
+                flyoutMenuIconLogCount++;
+                Log.d(TAG, "LibraryPinMenuIcon applied=true"
+                        + " action="
+                        + (unpinAction ? "unpin" : "pin")
+                        + " source=patchOwnedDrawable"
+                        + " presenterType="
+                        + objectTypeName(presenter)
+                        + " itemType="
+                        + objectTypeName(menuItem));
+            }
+        } catch (Throwable error) {
+            Log.e(TAG, "Failed styling Library pin menu icon", error);
+        }
+    }
+
+    /**
      * Hijacks only the existing Pin/Unpin Speed Dial rows.
      */
     public static boolean handleClick(
@@ -1989,30 +3692,48 @@ public final class PinPlaylistPatch {
     ) {
         try {
             Object menuItem = findPresenterMenuItem(presenter);
-            Object iconMessage = invokeStaticByNames(
-                    MENU_ITEM_HELPER_CLASSES,
-                    "d",
-                    menuItem
-            );
-            Object iconNumber = readFieldByName(iconMessage, "c");
-            Object icon = invokeStaticByNames(
-                    ICON_ENUM_CLASSES,
-                    "a",
-                    iconNumber
-            );
+            boolean handled;
 
-            return icon instanceof Enum<?>
-                    && handleClick(
-                    clickedView,
-                    (Enum<?>) icon,
-                    presenter,
-                    menuItem
-            );
+            if (isInjectedLibraryPinMenuItem(menuItem)) {
+                handled = handleClick(
+                        clickedView,
+                        null,
+                        presenter,
+                        menuItem
+                );
+            } else {
+                Object iconMessage = invokeStaticByNames(
+                        MENU_ITEM_HELPER_CLASSES,
+                        "d",
+                        menuItem
+                );
+                Object iconNumber = readFieldByName(iconMessage, "c");
+                Object icon = invokeStaticByNames(
+                        ICON_ENUM_CLASSES,
+                        "a",
+                        iconNumber
+                );
+
+                handled = icon instanceof Enum<?>
+                        && handleClick(
+                        clickedView,
+                        (Enum<?>) icon,
+                        presenter,
+                        menuItem
+                );
+            }
+
+            if (handled) {
+                dismissFlyout(clickedView);
+            }
+
+            return handled;
         } catch (Throwable error) {
             Log.e(TAG, "Failed resolving menu click", error);
             return false;
         }
     }
+
 
     /**
      * Performs the pin action after the presenter-specific click data is resolved.
@@ -2040,9 +3761,11 @@ public final class PinPlaylistPatch {
             return false;
         }
 
-        if (icon == null) return false;
+        if (icon == null && !injectedMenuItem) return false;
 
-        String name = icon.name();
+        String name = icon == null
+                ? "LIBRARY_PIN"
+                : icon.name();
 
         boolean isPin =
                 name.equals("KEEP") ||
@@ -2052,7 +3775,7 @@ public final class PinPlaylistPatch {
                 name.equals("KEEP_OFF") ||
                 name.equals("PIN_OFF_OUTLINE");
 
-        if (!isPin && !isUnpin) return false;
+        if (!injectedMenuItem && !isPin && !isUnpin) return false;
 
         if (clickedView != null) {
             Context context = clickedView.getContext();
@@ -2084,7 +3807,7 @@ public final class PinPlaylistPatch {
                     + " menuItemType=" + objectTypeName(menuItem));
 
             /*
-             * Consume a stray injected row so its cloned native command can
+             * Consume a stray injected row so its native command can
              * never run. Stock rows fall through to the original app action.
              */
             return injectedMenuItem;
@@ -2108,6 +3831,10 @@ public final class PinPlaylistPatch {
                 clickedView.getContext();
         boolean newPinnedState =
                 PinStore.togglePinned(clickContext, key);
+
+        synchronized (preparedNativeLibraryLists) {
+            preparedNativeLibraryLists.remove(activeLibraryAdapter);
+        }
 
         showPinStateToast(
                 clickContext,
@@ -2141,12 +3868,50 @@ public final class PinPlaylistPatch {
                 );
 
         if (!refreshedFactoryMap) {
-            clearAllAdapterPositionRemaps("pinToggleFallback");
+            refreshedFactoryMap =
+                    refreshStableDelegatePositionMapAfterToggle();
+        }
+
+        if (!refreshedFactoryMap) {
+            clearActivePositionRemapPreservingContext(
+                    "pinToggleFallback"
+            );
 
             Object adapter = activeLibraryAdapter;
+
+            if (adapter != null) {
+                boolean fullNotify =
+                        invokeAdapterFullRefresh(adapter);
+
+                if (!fullNotify) {
+                    postVisiblePinIndicatorRefresh(adapter);
+                }
+
+                Log.d(TAG, "PinToggleFallbackRefresh"
+                        + " adapterIdentity="
+                        + identityString(adapter)
+                        + " fullNotify=" + fullNotify
+                        + " activeContextPreserved=true");
+            }
             Long rowId = matchingRowContext
                     ? activeFlyoutStableRowId
                     : null;
+
+            if (rowId == null && adapter != null) {
+                synchronized (adapterPlaylistIds) {
+                    Map<Long, String> knownRows =
+                            adapterPlaylistIds.get(adapter);
+                    if (knownRows != null) {
+                        for (Map.Entry<Long, String> entry
+                                : knownRows.entrySet()) {
+                            if (key.equals(entry.getValue())) {
+                                rowId = entry.getKey();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
 
             if (adapter != null && rowId != null) {
                 rememberAdapterPlaylistId(
@@ -2350,32 +4115,26 @@ public final class PinPlaylistPatch {
     private static String findBestPlaylistId(Set<String> candidates) {
         if (candidates == null) return null;
 
-        String best = null;
+        Set<String> playlistIds = new LinkedHashSet<>();
 
         for (String candidate : candidates) {
             if (candidate == null) continue;
 
             Matcher matcher = PLAYLIST_ID_PATTERN.matcher(candidate);
             while (matcher.find()) {
-                String id = matcher.group(1);
-
-                if (best == null
-                        || id.length() < best.length()
-                        || (id.length() == best.length()
-                        && candidate.equals(id))) {
-                    best = id;
-                }
+                playlistIds.add(matcher.group(1));
             }
 
-            if (best == null
-                    && (candidate.contains("VLLM")
+            if (candidate.contains("VLLM")
                     || candidate.equals("LM")
-                    || candidate.startsWith("LM"))) {
-                best = "LM";
+                    || candidate.startsWith("LM")) {
+                playlistIds.add("LM");
             }
         }
 
-        return best;
+        return playlistIds.size() == 1
+                ? playlistIds.iterator().next()
+                : null;
     }
 
 
@@ -2602,35 +4361,72 @@ public final class PinPlaylistPatch {
         return null;
     }
 
+    private static String staticMethodCacheKey(
+            String className,
+            String methodName,
+            Object[] arguments
+    ) {
+        StringBuilder key = new StringBuilder(
+                className.length() + methodName.length() + 24
+        );
+        key.append(className).append('#').append(methodName);
+
+        for (Object argument : arguments) {
+            key.append('|');
+            key.append(argument == null
+                    ? "<null>"
+                    : argument.getClass().getName());
+        }
+
+        return key.toString();
+    }
+
     @Nullable
     private static Object invokeStaticByName(
             String className,
             String methodName,
             Object... arguments
     ) {
-        try {
-            Class<?> type =
-                    Class.forName(className);
+        String cacheKey =
+                staticMethodCacheKey(
+                        className,
+                        methodName,
+                        arguments
+                );
+        Method cached;
 
-            for (Method method :
-                    type.getDeclaredMethods()) {
-                if (!Modifier.isStatic(
-                        method.getModifiers()
-                ) || !method.getName().equals(methodName)
+        synchronized (staticMethodCache) {
+            cached = staticMethodCache.get(cacheKey);
+        }
+
+        if (cached != null) {
+            try {
+                return cached.invoke(null, arguments);
+            } catch (Throwable ignored) {
+                synchronized (staticMethodCache) {
+                    staticMethodCache.remove(cacheKey);
+                }
+            }
+        }
+
+        try {
+            Class<?> type = Class.forName(className);
+
+            for (Method method : type.getDeclaredMethods()) {
+                if (!Modifier.isStatic(method.getModifiers())
+                        || !method.getName().equals(methodName)
                         || method.getParameterTypes().length
                         != arguments.length) {
                     continue;
                 }
 
-                Class<?>[] parameterTypes =
-                        method.getParameterTypes();
+                Class<?>[] parameterTypes = method.getParameterTypes();
                 boolean compatible = true;
 
                 for (int index = 0;
                      index < parameterTypes.length;
                      index++) {
-                    Object argument =
-                            arguments[index];
+                    Object argument = arguments[index];
 
                     if (argument == null) {
                         if (parameterTypes[index].isPrimitive()) {
@@ -2641,9 +4437,7 @@ public final class PinPlaylistPatch {
                     }
 
                     Class<?> parameterType =
-                            wrapPrimitiveType(
-                                    parameterTypes[index]
-                            );
+                            wrapPrimitiveType(parameterTypes[index]);
 
                     if (!parameterType.isInstance(argument)) {
                         compatible = false;
@@ -2654,12 +4448,18 @@ public final class PinPlaylistPatch {
                 if (!compatible) continue;
 
                 method.setAccessible(true);
-                return method.invoke(
-                        null,
-                        arguments
-                );
+
+                synchronized (staticMethodCache) {
+                    if (staticMethodCache.size()
+                            >= MAX_STATIC_METHOD_CACHE) {
+                        staticMethodCache.clear();
+                    }
+                    staticMethodCache.put(cacheKey, method);
+                }
+
+                return method.invoke(null, arguments);
             }
-        } catch (Throwable error) {
+        } catch (Throwable ignored) {
             return null;
         }
 
@@ -2752,13 +4552,7 @@ public final class PinPlaylistPatch {
                 enabled = lastFeatureEnabledState;
 
                 if (enabled == null) {
-                    enabled = true;
-
-                    /*
-                     * Selecting the patch is the feature toggle. Keep the
-                     * runtime extension independent of Morphe's settings
-                     * bundle so both patch bundles can be applied together.
-                     */
+                    enabled = PinPlaylistSettings.ENABLED.get();
                     lastFeatureEnabledState = enabled;
 
                     Log.d(TAG, "PinPlaylistFeatureStartup"
@@ -2794,6 +4588,7 @@ public final class PinPlaylistPatch {
             if (clearedPins) {
                 processHasAnyPins = false;
                 activeFlyoutPlaylistId = null;
+                activeFlyoutHasSpeedDial = false;
                 activeFlyoutCapturedAtMs = 0L;
 
                 Log.d(TAG, "PinPlaylistFreshStart"
@@ -2804,24 +4599,13 @@ public final class PinPlaylistPatch {
     }
 
     private static boolean isSeparateMenuItemEnabled() {
-        Boolean enabled = lastSeparateMenuItemEnabledState;
-        if (enabled != null) return enabled;
-
-        synchronized (featureStateLock) {
-            enabled = lastSeparateMenuItemEnabledState;
-            if (enabled != null) return enabled;
-
-            enabled = true;
-
-            lastSeparateMenuItemEnabledState = enabled;
-
-            Log.d(TAG, "PinPlaylistSeparateMenuStartup"
-                    + " enabled=" + enabled
-                    + " restartRequired=true");
-
-            return enabled;
-        }
+        /*
+         * Native-model insertion is now the only supported flyout mode. Reuse
+         * the single feature setting instead of registering another BooleanSetting.
+         */
+        return isFeatureEnabled();
     }
+
 
 
     private static boolean hasAnyPinsFast() {
@@ -2860,43 +4644,258 @@ public final class PinPlaylistPatch {
                 PinStore.hasAnyPins(context);
     }
 
-    private static boolean captureActiveFactoryContext(
+    private static boolean isAdapterProxyOwner(
+            @Nullable Object owner,
+            boolean register
+    ) {
+        if (owner == null) return false;
+
+        Class<?> ownerClass = adapterProxyOwnerClass;
+        if (ownerClass == null && register) {
+            adapterProxyOwnerClass = owner.getClass();
+            return true;
+        }
+
+        return owner.getClass() == ownerClass;
+    }
+
+    private static boolean isAdapterProxyRenderInfo(
+            @Nullable Object renderInfo,
+            boolean register
+    ) {
+        if (renderInfo == null) return false;
+
+        synchronized (adapterProxyRenderInfoClasses) {
+            if (register) {
+                adapterProxyRenderInfoClasses.add(renderInfo.getClass());
+                return true;
+            }
+
+            return adapterProxyRenderInfoClasses.contains(
+                    renderInfo.getClass()
+            );
+        }
+    }
+
+    private static boolean isAdapterProxyCandidateOwner(
             @Nullable Object owner
     ) {
+        if (owner == null) return false;
+
+        synchronized (adapterProxyCandidateOwners) {
+            return adapterProxyCandidateOwners.containsKey(owner);
+        }
+    }
+
+    private static void updateAdapterProxyCandidateOwner(
+            @Nullable Object owner,
+            @Nullable Integer sourceCount
+    ) {
+        if (owner == null) return;
+
+        boolean candidate = sourceCount != null
+                && sourceCount >= 6
+                && sourceCount <= 24;
+
+        synchronized (adapterProxyCandidateOwners) {
+            if (candidate) {
+                adapterProxyCandidateOwners.put(owner, Boolean.TRUE);
+            } else {
+                adapterProxyCandidateOwners.remove(owner);
+            }
+        }
+    }
+
+    private static boolean isConfirmedLibraryProxyOwner(
+            @Nullable Object owner
+    ) {
+        if (owner == null) return false;
+        if (owner == activeAdapterProxyFactoryOwner) return true;
+
+        synchronized (adapterProxyFactoryVisualToSource) {
+            if (adapterProxyFactoryVisualToSource.containsKey(owner)) {
+                return true;
+            }
+        }
+
+        synchronized (ownerVisualPlaylistIds) {
+            Map<Integer, String> ids = ownerVisualPlaylistIds.get(owner);
+            return ids != null && !ids.isEmpty();
+        }
+    }
+
+    private static boolean hasAnyInstalledFactoryPositionMap() {
+        synchronized (adapterProxyFactoryVisualToSource) {
+            return !adapterProxyFactoryVisualToSource.isEmpty();
+        }
+    }
+
+    private static boolean isConfirmedLibraryAdapterInstance(
+            @Nullable Object adapter
+    ) {
+        if (!isLibraryAdapter(adapter)) return false;
+        if (adapter == activeAdapterProxyFactoryVisualAdapter) return true;
+
+        synchronized (adapterVisualToSourcePositions) {
+            if (adapterVisualToSourcePositions.containsKey(adapter)) {
+                return true;
+            }
+        }
+
+        synchronized (adapterVisualPlaylistIds) {
+            Map<Integer, String> ids = adapterVisualPlaylistIds.get(adapter);
+            return ids != null && !ids.isEmpty();
+        }
+    }
+
+    @Nullable
+    private static Object getAdapterProxySourceAdapter(Object owner) {
+        synchronized (adapterProxySourceAdapters) {
+            return adapterProxySourceAdapters.get(owner);
+        }
+    }
+
+    @Nullable
+    private static Object findAdapterProxyVisualAdapter(Object owner) {
+        synchronized (adapterProxyVisualAdapters) {
+            Object known = adapterProxyVisualAdapters.get(owner);
+            if (isLibraryAdapter(known)) return known;
+        }
+
+        Object controller = readFieldByName(owner, "p");
+        Object visualAdapter = readFieldByName(controller, "f");
+        if (isLibraryAdapter(visualAdapter)) {
+            synchronized (adapterProxyVisualAdapters) {
+                adapterProxyVisualAdapters.put(owner, visualAdapter);
+            }
+            return visualAdapter;
+        }
+
+        List<Object> firstLevel = directObfuscatedObjects(owner);
+        for (Object child : firstLevel) {
+            if (isLibraryAdapter(child)) {
+                synchronized (adapterProxyVisualAdapters) {
+                    adapterProxyVisualAdapters.put(owner, child);
+                }
+                return child;
+            }
+
+            for (Object grandchild : directObfuscatedObjects(child)) {
+                if (!isLibraryAdapter(grandchild)) continue;
+
+                synchronized (adapterProxyVisualAdapters) {
+                    adapterProxyVisualAdapters.put(owner, grandchild);
+                }
+                return grandchild;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 9.25.50 keeps the AdapterProxy owner and RecyclerView/Litho adapter in
+     * separate object graphs. The source factory can still derive a complete,
+     * verified playlist permutation, but reflection from the owner cannot reach
+     * the visual adapter. Pair that pending owner with the concrete adapter
+     * instance supplied by the already-scoped Library bind hook.
+     */
+    private static void bridgePendingAdapterProxyVisualAdapter(
+            @Nullable Object visualAdapter
+    ) {
+        if (!isLibraryAdapter(visualAdapter)) return;
+
+        Object owner = activeAdapterProxyFactoryOwner;
+        int[] visualToSource = null;
+        Integer sourceCount = null;
+
+        if (owner != null) {
+            synchronized (adapterProxyFactoryVisualToSource) {
+                int[] pending =
+                        adapterProxyFactoryVisualToSource.get(owner);
+                if (pending != null) {
+                    visualToSource = pending.clone();
+                    sourceCount =
+                            adapterProxyFactorySourceCounts.get(owner);
+                }
+            }
+        }
+
+        /*
+         * Process recreation can leave no active owner while one verified map
+         * is waiting for the first adapter bind. Accept only an unambiguous
+         * single pending owner; never guess between multiple feed instances.
+         */
+        if (visualToSource == null) {
+            synchronized (adapterProxyFactoryVisualToSource) {
+                if (adapterProxyFactoryVisualToSource.size() == 1) {
+                    Map.Entry<Object, int[]> entry =
+                            adapterProxyFactoryVisualToSource
+                                    .entrySet().iterator().next();
+                    owner = entry.getKey();
+                    visualToSource = entry.getValue().clone();
+                    sourceCount =
+                            adapterProxyFactorySourceCounts.get(owner);
+                }
+            }
+        }
+
         if (owner == null
-                || !"bfrh".equals(objectTypeName(owner))) {
-            return false;
+                || visualToSource == null
+                || sourceCount == null
+                || sourceCount != visualToSource.length
+                || sourceCount < 10
+                || sourceCount > 24) {
+            return;
         }
 
-        Object controller = readFieldByName(owner, "o");
-        Object visualAdapter = controller == null
-                ? null
-                : readFieldByName(controller, "f");
-
-        if (!isLibraryAdapter(visualAdapter)) {
-            return false;
+        Map<Integer, String> playlistIds;
+        synchronized (ownerVisualPlaylistIds) {
+            Map<Integer, String> ids =
+                    ownerVisualPlaylistIds.get(owner);
+            if (ids == null || ids.size() < 3) return;
+            playlistIds = new LinkedHashMap<>(ids);
         }
 
-        boolean changed =
-                owner != activeAdapterProxyFactoryOwner
-                        || visualAdapter
-                        != activeAdapterProxyFactoryVisualAdapter;
+        boolean changed;
+        synchronized (adapterProxyVisualAdapters) {
+            Object previous = adapterProxyVisualAdapters.put(
+                    owner,
+                    visualAdapter
+            );
+            changed = previous != visualAdapter;
+        }
+
+        synchronized (adapterVisualToSourcePositions) {
+            adapterVisualToSourcePositions.clear();
+            adapterVisualToSourcePositions.put(
+                    visualAdapter,
+                    visualToSource.clone()
+            );
+        }
+
+        installAdapterPinIndicatorMetadata(owner, visualAdapter);
 
         activeAdapterProxyFactoryOwner = owner;
-        activeAdapterProxyFactoryVisualAdapter =
-                visualAdapter;
+        activeAdapterProxyFactoryVisualAdapter = visualAdapter;
+        activeLibraryAdapter = visualAdapter;
+        lastKnownLibraryPlaylistCount = playlistIds.size();
 
-        if (changed && noPinFactoryContextLogCount < 8) {
-            noPinFactoryContextLogCount++;
-
-            Log.d(TAG, "NoPinFactoryContextCaptured"
-                    + " ownerIdentity="
-                    + identityString(owner)
+        if (changed && adapterProxyVisualBridgeLogCount < 12) {
+            adapterProxyVisualBridgeLogCount++;
+            Log.d(TAG, "AdapterProxyVisualBridge"
+                    + " installed=true"
+                    + " ownerType=" + objectTypeName(owner)
+                    + " ownerIdentity=" + identityString(owner)
+                    + " visualAdapterType="
+                    + objectTypeName(visualAdapter)
                     + " visualAdapterIdentity="
-                    + identityString(visualAdapter));
+                    + identityString(visualAdapter)
+                    + " sourceCount=" + sourceCount
+                    + " playlistCount=" + playlistIds.size()
+                    + " visualToSource="
+                    + java.util.Arrays.toString(visualToSource));
         }
-
-        return true;
     }
 
     public static int remapAdapterProxySourcePosition(
@@ -2907,22 +4906,12 @@ public final class PinPlaylistPatch {
             return visualPosition;
         }
 
-        if (owner == null
-                || visualPosition < 0
-                || !"bfrh".equals(objectTypeName(owner))) {
+        if (visualPosition < 0
+                || !isAdapterProxyOwner(owner, false)) {
             return visualPosition;
         }
 
-        if (!hasAnyPinsFast()) {
-            /*
-             * Keep the clean-install path cheap, but retain the current bfrh
-             * owner and hyz adapter. When the first playlist is pinned, the
-             * click handler can build and install the position map immediately
-             * instead of waiting for an app restart.
-             */
-            captureActiveFactoryContext(owner);
-            return visualPosition;
-        }
+        boolean hasPins = hasAnyPinsFast();
 
         /*
          * A complete rebuild begins at position zero. Only that invocation
@@ -2936,7 +4925,7 @@ public final class PinPlaylistPatch {
             return visualPosition;
         }
 
-        Object sourceAdapter = readFieldByName(owner, "p");
+        Object sourceAdapter = getAdapterProxySourceAdapter(owner);
         Integer sourceCount =
                 invokeIntNoArg(sourceAdapter, "a");
 
@@ -2944,6 +4933,8 @@ public final class PinPlaylistPatch {
                 || sourceCount == null
                 || sourceCount < 10
                 || sourceCount > 24) {
+            updateAdapterProxyCandidateOwner(owner, sourceCount);
+
             if (adapterProxyFactoryInstallLogCount < 12) {
                 adapterProxyFactoryInstallLogCount++;
 
@@ -2955,6 +4946,14 @@ public final class PinPlaylistPatch {
                         + " sourceCount=" + sourceCount);
             }
 
+            return visualPosition;
+        }
+
+        updateAdapterProxyCandidateOwner(owner, sourceCount);
+
+        if (!hasPins
+                && isConfirmedLibraryProxyOwner(owner)
+                && activeAdapterProxyFactoryVisualAdapter != null) {
             return visualPosition;
         }
 
@@ -2973,21 +4972,36 @@ public final class PinPlaylistPatch {
             return visualPosition;
         }
 
-        Object controller = readFieldByName(owner, "o");
-        Object visualAdapter = controller == null
-                ? null
-                : readFieldByName(controller, "f");
+        /*
+         * Retain the verified source-side map even when this release separates
+         * the visual adapter from the owner graph. The scoped adapter bind hook
+         * will attach the concrete visual adapter before its position reads.
+         */
+        synchronized (adapterProxyFactoryVisualToSource) {
+            adapterProxyFactoryVisualToSource.put(
+                    owner,
+                    visualToSource.clone()
+            );
+            adapterProxyFactorySourceCounts.put(
+                    owner,
+                    sourceCount
+            );
+        }
+        activeAdapterProxyFactoryOwner = owner;
+
+        Object visualAdapter = findAdapterProxyVisualAdapter(owner);
 
         if (!isLibraryAdapter(visualAdapter)) {
             if (adapterProxyFactoryInstallLogCount < 12) {
                 adapterProxyFactoryInstallLogCount++;
 
-                Log.d(TAG, "PreFactoryFastPathSkipped"
-                        + " reason=visualAdapterUnavailable"
-                        + " controllerType="
-                        + objectTypeName(controller)
-                        + " visualAdapterType="
-                        + objectTypeName(visualAdapter));
+                    Log.d(TAG, "PreFactoryVisualBridgePending"
+                            + " reason=visualAdapterUnavailable"
+                            + " ownerType=" + objectTypeName(owner)
+                            + " ownerIdentity=" + identityString(owner)
+                            + " sourceCount=" + sourceCount
+                            + " visualAdapterType="
+                            + objectTypeName(visualAdapter));
             }
 
             return visualPosition;
@@ -3040,6 +5054,21 @@ public final class PinPlaylistPatch {
             Object sourceAdapter,
             int sourceCount
     ) {
+        return buildAdapterProxyFactoryPositionMap(
+                owner,
+                sourceAdapter,
+                sourceCount,
+                "getItem"
+        );
+    }
+
+    @Nullable
+    private static int[] buildAdapterProxyFactoryPositionMap(
+            Object owner,
+            Object sourceAdapter,
+            int sourceCount,
+            String itemAccessor
+    ) {
         Context context = resolveApplicationContext();
         if (context == null) {
             if (adapterProxyFactoryMapLogCount < 24) {
@@ -3056,7 +5085,8 @@ public final class PinPlaylistPatch {
                         PinStore.getPinnedIds(context)
                 );
 
-        if (pinOrder.isEmpty()) return null;
+        boolean resetToNativeOrder =
+                pinOrder.isEmpty();
 
         List<Object> sourceItems =
                 new ArrayList<>(sourceCount);
@@ -3079,7 +5109,7 @@ public final class PinPlaylistPatch {
             Object sourceItem =
                     invokeOneIntArgument(
                             sourceAdapter,
-                            "getItem",
+                            itemAccessor,
                             position
                     );
 
@@ -3164,23 +5194,32 @@ public final class PinPlaylistPatch {
         List<String> pinnedPresent =
                 new ArrayList<>();
 
-        for (String pinnedId : pinOrder) {
-            Integer sourcePosition =
-                    sourcePositionById.get(pinnedId);
+        if (!resetToNativeOrder) {
+            for (String pinnedId : pinOrder) {
+                Integer sourcePosition =
+                        sourcePositionById.get(pinnedId);
 
-            if (sourcePosition == null) continue;
+                if (sourcePosition == null) continue;
 
-            desiredPlaylistSources.add(sourcePosition);
-            pinnedSourcePositions.add(sourcePosition);
-            pinnedPresent.add(pinnedId);
-        }
+                desiredPlaylistSources.add(sourcePosition);
+                pinnedSourcePositions.add(sourcePosition);
+                pinnedPresent.add(pinnedId);
+            }
 
-        if (pinnedPresent.isEmpty()) {
-            return null;
+            /*
+             * A non-empty pin store with no matching Library row means this is
+             * not the active playlist collection, or its identity model has
+             * changed. Do not install an unrelated permutation.
+             */
+            if (pinnedPresent.isEmpty()) {
+                return null;
+            }
         }
 
         /*
          * Retain the current native order for all unpinned playlist rows.
+         * When the final pin was removed, this naturally produces the identity
+         * permutation and restores YouTube Music's native order.
          */
         for (int sourcePosition : playlistSlots) {
             if (!pinnedSourcePositions.contains(
@@ -3290,6 +5329,7 @@ public final class PinPlaylistPatch {
                 + " count=" + sourceCount
                 + " playlistSlots=" + playlistSlots
                 + " pinnedPresent=" + pinnedPresent
+                + " resetToNativeOrder=" + resetToNativeOrder
                 + " visualToSource="
                 + java.util.Arrays.toString(
                 visualToSource
@@ -3317,11 +5357,35 @@ public final class PinPlaylistPatch {
             int sourceIndex
     ) {
         if (!isFeatureEnabled()
-                || !hasAnyPinsFast()) {
+                || !isAdapterProxyOwner(owner, true)) {
             return;
         }
 
-        if (!adapterProxyHookLogged) {
+        boolean hasPins = hasAnyPinsFast();
+
+        /*
+         * For an unknown owner, capture only its first source frame. The first
+         * frame exposes the source adapter and allows structural validation.
+         * With no pins, later frames have no work. With a pre-factory map,
+         * later frames are also unnecessary because position zero performs
+         * every required rebuild and the visual adapter owns the permutation.
+         */
+        if (sourceIndex != 0) {
+            if (!hasPins) return;
+
+            synchronized (adapterProxyFactoryVisualToSource) {
+                if (adapterProxyFactoryVisualToSource.containsKey(owner)) {
+                    return;
+                }
+            }
+
+            if (!isAdapterProxyCandidateOwner(owner)
+                    && !isConfirmedLibraryProxyOwner(owner)) {
+                return;
+            }
+        }
+
+        if (hasPins && !adapterProxyHookLogged) {
             adapterProxyHookLogged = true;
             Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
                     + " adapterProxySourceHook=true");
@@ -3333,6 +5397,725 @@ public final class PinPlaylistPatch {
         stack.add(
                 new AdapterProxySource(owner, sourceIndex)
         );
+    }
+
+    public static void captureAdapterProxySourceAdapter(
+            @Nullable Object sourceAdapter
+    ) {
+        ArrayList<AdapterProxySource> stack =
+                pendingAdapterProxySources.get();
+        if (stack.isEmpty() || sourceAdapter == null) return;
+
+        AdapterProxySource source = stack.get(stack.size() - 1);
+        source.sourceAdapter = sourceAdapter;
+
+        Integer sourceCount = invokeIntNoArg(sourceAdapter, "a");
+        updateAdapterProxyCandidateOwner(source.owner, sourceCount);
+
+        if (source.sourceIndex == 0
+                || isAdapterProxyCandidateOwner(source.owner)
+                || isConfirmedLibraryProxyOwner(source.owner)) {
+            synchronized (adapterProxySourceAdapters) {
+                adapterProxySourceAdapters.put(
+                        source.owner,
+                        sourceAdapter
+                );
+            }
+        }
+    }
+
+    public static int remapActiveAdapterProxySourcePosition(
+            int visualPosition
+    ) {
+        ArrayList<AdapterProxySource> stack =
+                pendingAdapterProxySources.get();
+        if (stack.isEmpty()) return visualPosition;
+
+        AdapterProxySource source = stack.get(stack.size() - 1);
+        return remapAdapterProxySourcePosition(
+                source.owner,
+                visualPosition
+        );
+    }
+
+    public static void inspectNativeLibraryRows(
+            @Nullable Object owner,
+            @Nullable Object rows
+    ) {
+        if (hasAnyInstalledFactoryPositionMap()) return;
+        prepareDiscoveredNativeRowList(owner, rows);
+    }
+
+    public static void inspectNativeLibraryController(
+            @Nullable Object controller
+    ) {
+        prepareNativeLibraryTransaction(controller);
+    }
+
+    public static void prepareNativeLibraryTransaction(
+            @Nullable Object transaction
+    ) {
+        if (!isFeatureEnabled()
+                || !hasAnyPinsFast()
+                || hasAnyInstalledFactoryPositionMap()
+                || transaction == null) {
+            return;
+        }
+
+        if (nativeLibraryResolverLogCount < 12) {
+            nativeLibraryResolverLogCount++;
+            Log.d(TAG, "NativeLibraryResolverEntry"
+                    + " transactionType="
+                    + objectTypeName(transaction));
+        }
+
+        if (transaction instanceof List) {
+            prepareDiscoveredNativeRowList(null, transaction);
+            return;
+        }
+
+        if (prepareDirectNativeRowLists(transaction)) return;
+
+        List<Object> firstLevel = directObfuscatedObjects(transaction);
+        for (Object child : firstLevel) {
+            if (prepareDirectNativeRowLists(child)) return;
+
+            for (Object grandchild : directObfuscatedObjects(child)) {
+                if (prepareDirectNativeRowLists(grandchild)) return;
+            }
+        }
+    }
+
+    private static boolean prepareDirectNativeRowLists(Object owner) {
+        List<String> directLists = new ArrayList<>();
+        for (Class<?> current = owner.getClass();
+             current != null && current != Object.class;
+             current = current.getSuperclass()) {
+            Field[] fields;
+            try {
+                fields = current.getDeclaredFields();
+            } catch (Throwable ignored) {
+                continue;
+            }
+
+            for (Field field : fields) {
+                if (Modifier.isStatic(field.getModifiers())
+                        || !List.class.isAssignableFrom(field.getType())) {
+                    continue;
+                }
+
+                Object rows;
+                try {
+                    field.setAccessible(true);
+                    rows = field.get(owner);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+
+                if (!(rows instanceof List)) continue;
+                List<?> list = (List<?>) rows;
+                directLists.add(field.getName()
+                        + "=" + list.size()
+                        + ":" + (list.isEmpty()
+                        ? "empty"
+                        : objectTypeName(list.get(0))));
+
+                if (prepareDiscoveredNativeRowList(
+                        owner,
+                        rows
+                )) {
+                    return true;
+                }
+            }
+        }
+
+        if (!directLists.isEmpty()
+                && nativeLibraryResolverLogCount < 30) {
+            nativeLibraryResolverLogCount++;
+            Log.d(TAG, "NativeLibraryDirectLists"
+                    + " ownerType=" + objectTypeName(owner)
+                    + " lists=" + directLists);
+        }
+
+        return false;
+    }
+
+    private static List<Object> directObfuscatedObjects(Object owner) {
+        List<Object> result = new ArrayList<>();
+        for (Class<?> current = owner.getClass();
+             current != null && current != Object.class;
+             current = current.getSuperclass()) {
+            Field[] fields;
+            try {
+                fields = current.getDeclaredFields();
+            } catch (Throwable ignored) {
+                continue;
+            }
+
+            for (Field field : fields) {
+                if (Modifier.isStatic(field.getModifiers())
+                        || field.getType().isPrimitive()) {
+                    continue;
+                }
+
+                Object child;
+                try {
+                    field.setAccessible(true);
+                    child = field.get(owner);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+
+                if (child == null
+                        || child instanceof Iterable
+                        || child instanceof Map
+                        || child.getClass().isArray()
+                        || child.getClass().getName().contains(".")) {
+                    continue;
+                }
+
+                result.add(child);
+                if (result.size() >= 12) return result;
+            }
+        }
+        return result;
+    }
+
+    public static void beginNativeLibraryMutation(
+            @Nullable Object controller
+    ) {
+        if (hasAnyInstalledFactoryPositionMap()) {
+            pendingNativeLibraryController.remove();
+            return;
+        }
+
+        pendingNativeLibraryController.set(controller);
+        prepareNativeLibraryTransaction(controller);
+    }
+
+    public static void finishNativeLibraryMutation() {
+        Object controller = pendingNativeLibraryController.get();
+        pendingNativeLibraryController.remove();
+        prepareNativeLibraryTransaction(controller);
+    }
+
+    private static void applyPersistedNativeLibraryOrder(
+            @Nullable Object owner
+    ) {
+        if (!isFeatureEnabled()
+                || !hasAnyPinsFast()
+                || hasAnyInstalledFactoryPositionMap()
+                || owner == null) {
+            return;
+        }
+
+        if (applyPersistedOrderToDirectList(owner)) return;
+        for (Object child : directObfuscatedObjects(owner)) {
+            if (applyPersistedOrderToDirectList(child)) return;
+            for (Object grandchild : directObfuscatedObjects(child)) {
+                if (applyPersistedOrderToDirectList(grandchild)) return;
+            }
+        }
+    }
+
+    public static void preparePersistedLibraryAdapter(
+            @Nullable Object adapter
+    ) {
+        if (!isLibraryAdapter(adapter)) return;
+
+        bridgePendingAdapterProxyVisualAdapter(adapter);
+
+        if (hasAnyInstalledFactoryPositionMap()) {
+            return;
+        }
+
+        synchronized (preparedNativeLibraryLists) {
+            if (preparedNativeLibraryLists.containsKey(adapter)) return;
+        }
+
+        Context context = resolveApplicationContext();
+        if (context == null) return;
+
+        Set<String> pinOrder = PinStore.getPinnedIds(context);
+        String expectedRowType =
+                PinStore.getLibraryPermutationRowType(context);
+        if (pinOrder.isEmpty() || expectedRowType.isEmpty()) return;
+
+        for (Object controller : directObfuscatedObjects(adapter)) {
+            for (Class<?> current = controller.getClass();
+                 current != null && current != Object.class;
+                 current = current.getSuperclass()) {
+                Field[] fields;
+                try {
+                    fields = current.getDeclaredFields();
+                } catch (Throwable ignored) {
+                    continue;
+                }
+
+                for (Field field : fields) {
+                    if (Modifier.isStatic(field.getModifiers())
+                            || !List.class.isAssignableFrom(
+                            field.getType())) {
+                        continue;
+                    }
+
+                    List<?> rows;
+                    try {
+                        field.setAccessible(true);
+                        rows = (List<?>) field.get(controller);
+                    } catch (Throwable ignored) {
+                        continue;
+                    }
+
+                    if (rows == null
+                            || rows.isEmpty()
+                            || !expectedRowType.equals(
+                            objectTypeName(rows.get(0)))) {
+                        continue;
+                    }
+
+                    int[] permutation =
+                            PinStore.getLibraryPermutation(
+                                    context,
+                                    pinOrder,
+                                    rows.size(),
+                                    stableIdsForItems(rows)
+                            );
+                    if (permutation == null) continue;
+
+                    synchronized (adapterVisualToSourcePositions) {
+                        adapterVisualToSourcePositions.put(
+                                adapter,
+                                permutation
+                        );
+                    }
+
+                    int[] playlistSlots =
+                            PinStore.getLibraryPlaylistSlots(context);
+                    LinkedHashMap<Integer, String> visualIds =
+                            new LinkedHashMap<>();
+                    LinkedHashSet<Integer> pinnedPositions =
+                            new LinkedHashSet<>();
+                    if (playlistSlots != null) {
+                        int pinIndex = 0;
+                        for (String pinnedId : pinOrder) {
+                            if (pinIndex >= playlistSlots.length) break;
+                            int position = playlistSlots[pinIndex++];
+                            if (position < 0 || position >= rows.size()) {
+                                continue;
+                            }
+                            visualIds.put(position, pinnedId);
+                            pinnedPositions.add(position);
+                        }
+                    }
+                    synchronized (adapterVisualPlaylistIds) {
+                        adapterVisualPlaylistIds.put(adapter, visualIds);
+                        adapterPinnedVisualPositions.put(
+                                adapter,
+                                pinnedPositions
+                        );
+                    }
+                    synchronized (preparedNativeLibraryLists) {
+                        preparedNativeLibraryLists.put(
+                                adapter,
+                                pinOrder.toString()
+                        );
+                    }
+
+                    Log.d(TAG, "PersistedLibraryPermutationInstalled"
+                            + " adapterType="
+                            + objectTypeName(adapter)
+                            + " total=" + rows.size()
+                            + " rowType=" + expectedRowType
+                            + " permutation="
+                            + java.util.Arrays.toString(permutation));
+                    return;
+                }
+            }
+        }
+    }
+
+    private static boolean applyPersistedOrderToDirectList(Object owner) {
+        Context context = resolveApplicationContext();
+        if (context == null) return false;
+
+        Set<String> pinOrder = PinStore.getPinnedIds(context);
+        String expectedRowType =
+                PinStore.getLibraryPermutationRowType(context);
+        if (pinOrder.isEmpty() || expectedRowType.isEmpty()) return false;
+
+        for (Class<?> current = owner.getClass();
+             current != null && current != Object.class;
+             current = current.getSuperclass()) {
+            Field[] fields;
+            try {
+                fields = current.getDeclaredFields();
+            } catch (Throwable ignored) {
+                continue;
+            }
+
+            for (Field field : fields) {
+                if (Modifier.isStatic(field.getModifiers())
+                        || !List.class.isAssignableFrom(field.getType())) {
+                    continue;
+                }
+
+                List rawList;
+                try {
+                    field.setAccessible(true);
+                    rawList = (List) field.get(owner);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+
+                if (rawList == null
+                        || rawList.isEmpty()
+                        || !expectedRowType.equals(
+                        objectTypeName(rawList.get(0)))) {
+                    continue;
+                }
+
+                int[] permutation = PinStore.getLibraryPermutation(
+                        context,
+                        pinOrder,
+                        rawList.size(),
+                        stableIdsForItems(rawList)
+                );
+                if (permutation == null) continue;
+
+                String token = pinOrder.toString()
+                        + java.util.Arrays.toString(permutation);
+                synchronized (preparedNativeLibraryLists) {
+                    if (token.equals(
+                            preparedNativeLibraryLists.get(rawList))) {
+                        return true;
+                    }
+                }
+
+                List<Object> nativeRows = new ArrayList<>(rawList);
+                try {
+                    for (int position = 0;
+                         position < permutation.length;
+                         position++) {
+                        rawList.set(
+                                position,
+                                nativeRows.get(permutation[position])
+                        );
+                    }
+                } catch (Throwable ignored) {
+                    return false;
+                }
+
+                synchronized (preparedNativeLibraryLists) {
+                    preparedNativeLibraryLists.put(rawList, token);
+                }
+
+                Log.d(TAG, "PersistedNativeLibraryOrderApplied"
+                        + " ownerType=" + objectTypeName(owner)
+                        + " field=" + field.getName()
+                        + " total=" + rawList.size()
+                        + " rowType=" + expectedRowType
+                        + " permutation="
+                        + java.util.Arrays.toString(permutation));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void prepareNativeLibrarySourceTransaction(
+            @Nullable Object transaction
+    ) {
+        if (!isFeatureEnabled()
+                || !hasAnyPinsFast()
+                || hasAnyInstalledFactoryPositionMap()
+                || transaction == null) {
+            return;
+        }
+
+        for (Class<?> current = transaction.getClass();
+             current != null && current != Object.class;
+             current = current.getSuperclass()) {
+            Field[] fields;
+            try {
+                fields = current.getDeclaredFields();
+            } catch (Throwable ignored) {
+                continue;
+            }
+
+            for (Field field : fields) {
+                if (Modifier.isStatic(field.getModifiers())
+                        || !SparseArray.class.isAssignableFrom(
+                        field.getType())) {
+                    continue;
+                }
+
+                SparseArray sourceRows;
+                try {
+                    field.setAccessible(true);
+                    sourceRows = (SparseArray) field.get(transaction);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+
+                if (sourceRows == null
+                        || sourceRows.size() < 6
+                        || sourceRows.size() > 24) {
+                    continue;
+                }
+
+                List<Object> values =
+                        new ArrayList<>(sourceRows.size());
+                for (int index = 0;
+                     index < sourceRows.size();
+                     index++) {
+                    values.add(sourceRows.valueAt(index));
+                }
+
+                if (!prepareDiscoveredNativeRowList(
+                        transaction,
+                        values
+                )) {
+                    continue;
+                }
+
+                for (int index = 0;
+                     index < values.size();
+                     index++) {
+                    sourceRows.setValueAt(index, values.get(index));
+                }
+
+                Log.d(TAG, "NativeLibrarySourcePrepared"
+                        + " transactionType="
+                        + objectTypeName(transaction)
+                        + " field=" + field.getName()
+                        + " total=" + values.size()
+                        + " rowType="
+                        + (values.isEmpty()
+                        ? "empty"
+                        : objectTypeName(values.get(0))));
+                return;
+            }
+        }
+    }
+
+    private static boolean findAndPrepareNativeRowList(
+            @Nullable Object value,
+            int depth,
+            IdentityHashMap<Object, Boolean> visited,
+            int[] visitedCount
+    ) {
+        if (value == null
+                || depth > 3
+                || visitedCount[0] >= 40
+                || visited.put(value, Boolean.TRUE) != null) {
+            return false;
+        }
+        visitedCount[0]++;
+
+        if (value instanceof List
+                && prepareDiscoveredNativeRowList(null, value)) {
+            return true;
+        }
+
+        Class<?> type = value.getClass();
+        if (isTerminalType(type)
+                || type.isPrimitive()
+                || type.isArray()
+                || value instanceof Map
+                || value instanceof Iterable) {
+            return false;
+        }
+
+        for (Class<?> current = type;
+             current != null && current != Object.class;
+             current = current.getSuperclass()) {
+            Field[] fields;
+            try {
+                fields = current.getDeclaredFields();
+            } catch (Throwable ignored) {
+                continue;
+            }
+
+            for (Field field : fields) {
+                if (Modifier.isStatic(field.getModifiers())
+                        || field.getType().isPrimitive()) {
+                    continue;
+                }
+
+                Object child;
+                try {
+                    field.setAccessible(true);
+                    child = field.get(value);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+
+                if (child instanceof List
+                        && prepareDiscoveredNativeRowList(value, child)) {
+                    return true;
+                }
+
+                if (depth < 3
+                        && findAndPrepareNativeRowList(
+                        child,
+                        depth + 1,
+                        visited,
+                        visitedCount
+                )) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean prepareDiscoveredNativeRowList(
+            @Nullable Object owner,
+            @Nullable Object rows
+    ) {
+        if (!(rows instanceof List)) return false;
+
+        List rawList = (List) rows;
+        int total = rawList.size();
+        if (total < 6 || total > 24) return false;
+
+        Context context = resolveApplicationContext();
+        if (context == null) return false;
+
+        List<String> pinOrder =
+                new ArrayList<>(PinStore.getPinnedIds(context));
+        if (pinOrder.isEmpty()) return false;
+
+        Map<String, String> persisted =
+                PinStore.getPlaylistSignatures(context);
+        LinkedHashMap<String, String> signatureToId =
+                new LinkedHashMap<>();
+        Set<String> knownIds = new LinkedHashSet<>(pinOrder);
+
+        for (Map.Entry<String, String> entry : persisted.entrySet()) {
+            String playlistId = entry.getKey();
+            String signature = entry.getValue();
+            if (isPersistentPlaylistId(playlistId)
+                    && signature != null
+                    && !signature.isEmpty()) {
+                knownIds.add(playlistId);
+                signatureToId.put(signature, playlistId);
+            }
+        }
+
+        LinkedHashMap<Integer, String> idByPosition =
+                new LinkedHashMap<>();
+        LinkedHashMap<String, Object> rowById =
+                new LinkedHashMap<>();
+
+        for (int position = 0; position < total; position++) {
+            Object row = rawList.get(position);
+            Set<String> candidates =
+                    collectCanonicalPlaylistIds(row, 10);
+            LinkedHashSet<String> persistentIds =
+                    new LinkedHashSet<>();
+
+            for (String candidate : candidates) {
+                if (isPersistentPlaylistId(candidate)) {
+                    persistentIds.add(candidate);
+                }
+            }
+
+            String playlistId = resolveCanonicalPlaylistId(
+                    persistentIds,
+                    pinOrder,
+                    knownIds
+            );
+
+            if (playlistId == null && !signatureToId.isEmpty()) {
+                String signature = findUniqueKnownRowSignature(
+                        collectObjectStrings(row),
+                        signatureToId
+                );
+                if (signature != null) {
+                    playlistId = signatureToId.get(signature);
+                }
+            }
+
+            if (!isPersistentPlaylistId(playlistId)
+                    || rowById.containsKey(playlistId)) {
+                continue;
+            }
+
+            idByPosition.put(position, playlistId);
+            rowById.put(playlistId, row);
+        }
+
+        int expectedPlaylistRows = lastKnownLibraryPlaylistCount;
+        if (nativeLibraryResolverLogCount < 30) {
+            nativeLibraryResolverLogCount++;
+            Log.d(TAG, "NativeLibraryResolverCandidate"
+                    + " ownerType=" + objectTypeName(owner)
+                    + " rowType="
+                    + (rawList.isEmpty()
+                    ? "empty"
+                    : objectTypeName(rawList.get(0)))
+                    + " total=" + total
+                    + " mapped=" + idByPosition
+                    + " expected=" + expectedPlaylistRows
+                    + " pinOrder=" + pinOrder);
+        }
+
+        if (idByPosition.size() < 3
+                || (expectedPlaylistRows >= 3
+                && idByPosition.size() < expectedPlaylistRows)) {
+            return false;
+        }
+
+        List<String> desiredIds = new ArrayList<>();
+        Set<String> pinnedPresent = new LinkedHashSet<>();
+        for (String pinnedId : pinOrder) {
+            if (rowById.containsKey(pinnedId)) {
+                desiredIds.add(pinnedId);
+                pinnedPresent.add(pinnedId);
+            }
+        }
+        if (pinnedPresent.isEmpty()) return false;
+
+        for (String playlistId : idByPosition.values()) {
+            if (!pinnedPresent.contains(playlistId)) {
+                desiredIds.add(playlistId);
+            }
+        }
+        if (desiredIds.size() != idByPosition.size()) return false;
+
+        List<Integer> playlistSlots =
+                new ArrayList<>(idByPosition.keySet());
+        List<String> currentIds =
+                new ArrayList<>(idByPosition.values());
+        if (currentIds.equals(desiredIds)) return true;
+
+        try {
+            for (int index = 0; index < playlistSlots.size(); index++) {
+                rawList.set(
+                        playlistSlots.get(index),
+                        rowById.get(desiredIds.get(index))
+                );
+            }
+        } catch (Throwable error) {
+            return false;
+        }
+
+        if (nativeLibrarySubmissionLogCount < 20) {
+            nativeLibrarySubmissionLogCount++;
+            Log.d(TAG, "NativeLibraryOrderPrepared"
+                    + " ownerType=" + objectTypeName(owner)
+                    + " total=" + total
+                    + " playlistSlots=" + playlistSlots
+                    + " pinnedPresent=" + pinnedPresent
+                    + " before=" + currentIds
+                    + " after=" + desiredIds);
+        }
+
+        return true;
     }
 
     public static void captureAdapterProxySourceObject(
@@ -3374,29 +6157,41 @@ public final class PinPlaylistPatch {
             pendingAdapterProxySources.remove();
         }
 
-        if (source.owner == null
-                || !"bfrh".equals(
-                objectTypeName(source.owner)
-        )
+        if (!isAdapterProxyOwner(source.owner, false)
                 || renderInfo == null
-                || !"hyi".equals(objectTypeName(renderInfo))) {
+                || !hasAnyPinsFast()) {
             return;
         }
 
         Integer sourceCount = null;
-        Object sourceAdapter =
-                readFieldByName(source.owner, "p");
+        Object sourceAdapter = source.sourceAdapter != null
+                ? source.sourceAdapter
+                : getAdapterProxySourceAdapter(source.owner);
 
         if (sourceAdapter != null) {
             sourceCount =
                     invokeIntNoArg(sourceAdapter, "a");
         }
 
-        if (sourceCount != null
-                && hasActiveFactoryMapForOwner(
-                        source.owner,
-                        sourceCount
-                )) {
+        updateAdapterProxyCandidateOwner(
+                source.owner,
+                sourceCount
+        );
+
+        if (sourceCount == null
+                || sourceCount < 6
+                || sourceCount > 24
+                || (!isAdapterProxyCandidateOwner(source.owner)
+                && !isConfirmedLibraryProxyOwner(source.owner))) {
+            return;
+        }
+
+        isAdapterProxyRenderInfo(renderInfo, true);
+
+        if (hasActiveFactoryMapForOwner(
+                source.owner,
+                sourceCount
+        )) {
             return;
         }
 
@@ -3448,8 +6243,9 @@ public final class PinPlaylistPatch {
                     + " adapterProxySourceHook=true");
         }
 
-        if (owner == null
-                || !"bfrh".equals(objectTypeName(owner))) {
+        if (!isAdapterProxyOwner(owner, false)
+                || (!isAdapterProxyCandidateOwner(owner)
+                && !isConfirmedLibraryProxyOwner(owner))) {
             pendingAdapterProxyOwner.remove();
             return;
         }
@@ -3471,7 +6267,9 @@ public final class PinPlaylistPatch {
 
         if (owner == null
                 || !(renderInfoList instanceof List)
-                || !"bfrh".equals(objectTypeName(owner))) {
+                || !isAdapterProxyOwner(owner, false)
+                || (!isAdapterProxyCandidateOwner(owner)
+                && !isConfirmedLibraryProxyOwner(owner))) {
             return;
         }
 
@@ -3482,6 +6280,13 @@ public final class PinPlaylistPatch {
 
         List rawList = (List) renderInfoList;
         int total = rawList.size();
+
+        /*
+         * Reject unrelated large feeds before counting render-info classes or
+         * searching source history. This is the path that previously walked
+         * 25- and 90-row playlist song submissions on the UI thread.
+         */
+        if (total < 6 || total > 24) return;
 
         if (hasActiveFactoryMapForOwner(
                 owner,
@@ -3502,7 +6307,7 @@ public final class PinPlaylistPatch {
         int proxyRows = 0;
 
         for (Object item : rawList) {
-            if ("hyi".equals(objectTypeName(item))) {
+            if (isAdapterProxyRenderInfo(item, false)) {
                 proxyRows++;
             }
         }
@@ -3533,7 +6338,6 @@ public final class PinPlaylistPatch {
          * exclude recommendation shelves while still catching the active B/S
          * insertion paths.
          */
-        if (total < 6 || total > 24) return;
         if (proxyRows < 6 || sourcedRows < 6) return;
 
         Context context = resolveApplicationContext();
@@ -3724,20 +6528,14 @@ public final class PinPlaylistPatch {
             List<Integer> playlistSlots,
             List<Object> desiredSourceItems
     ) {
-        Object controller = readFieldByName(owner, "o");
-        Object visualAdapter = controller == null
-                ? null
-                : readFieldByName(controller, "f");
-        Object sourceAdapter = readFieldByName(owner, "p");
+        Object visualAdapter = findAdapterProxyVisualAdapter(owner);
+        Object sourceAdapter = getAdapterProxySourceAdapter(owner);
 
         if (!isLibraryAdapter(visualAdapter)
-                || sourceAdapter == null
-                || !"bewt".equals(objectTypeName(sourceAdapter))) {
+                || sourceAdapter == null) {
             Log.d(TAG, "PreSubmitPositionMapSkipped"
                     + " reason=adapterResolution"
                     + " ownerType=" + objectTypeName(owner)
-                    + " controllerType="
-                    + objectTypeName(controller)
                     + " visualAdapterType="
                     + objectTypeName(visualAdapter)
                     + " sourceAdapterType="
@@ -3831,6 +6629,10 @@ public final class PinPlaylistPatch {
             );
         }
 
+        activeAdapterProxyFactoryOwner = owner;
+        activeAdapterProxyFactoryVisualAdapter = visualAdapter;
+        activeLibraryAdapter = visualAdapter;
+
         Log.d(TAG, "PreSubmitPositionMap"
                 + " installed=true"
                 + " visualAdapterType="
@@ -3853,10 +6655,7 @@ public final class PinPlaylistPatch {
     ) {
         if (owner == null) return;
 
-        Object controller = readFieldByName(owner, "o");
-        Object visualAdapter = controller == null
-                ? null
-                : readFieldByName(controller, "f");
+        Object visualAdapter = findAdapterProxyVisualAdapter(owner);
 
         if (visualAdapter == null) return;
 
@@ -3876,48 +6675,61 @@ public final class PinPlaylistPatch {
         }
     }
 
-    private static void clearAllAdapterPositionRemaps(
+    /**
+     * Drops only the currently installed permutation after a transient rebuild
+     * failure. The active owner, visual adapter, and source-adapter bridge are
+     * deliberately retained so the next pin action or adapter pass can rebuild
+     * the map without requiring an app restart or Library recreation.
+     */
+    private static void clearActivePositionRemapPreservingContext(
             String reason
     ) {
-        int count;
+        Object owner = activeAdapterProxyFactoryOwner;
+        Object visualAdapter =
+                activeAdapterProxyFactoryVisualAdapter;
 
-        synchronized (adapterVisualToSourcePositions) {
-            count = adapterVisualToSourcePositions.size();
-            adapterVisualToSourcePositions.clear();
+        boolean removed = false;
+
+        if (visualAdapter != null) {
+            synchronized (adapterVisualToSourcePositions) {
+                removed =
+                        adapterVisualToSourcePositions.remove(
+                                visualAdapter
+                        ) != null;
+            }
+
+            synchronized (adapterVisualPlaylistIds) {
+                adapterVisualPlaylistIds.remove(visualAdapter);
+                adapterPinnedVisualPositions.remove(visualAdapter);
+            }
         }
 
-        synchronized (adapterProxyFactoryVisualToSource) {
-            adapterProxyFactoryVisualToSource.clear();
-            adapterProxyFactorySourceCounts.clear();
+        if (owner != null) {
+            synchronized (adapterProxyFactoryVisualToSource) {
+                removed =
+                        adapterProxyFactoryVisualToSource.remove(
+                                owner
+                        ) != null
+                                || removed;
+                adapterProxyFactorySourceCounts.remove(owner);
+            }
+
+            synchronized (ownerVisualPlaylistIds) {
+                ownerVisualPlaylistIds.remove(owner);
+                ownerPinnedVisualPositions.remove(owner);
+            }
         }
-
-        synchronized (ownerVisualPlaylistIds) {
-            ownerVisualPlaylistIds.clear();
-            ownerPinnedVisualPositions.clear();
-        }
-
-        synchronized (adapterVisualPlaylistIds) {
-            adapterVisualPlaylistIds.clear();
-            adapterPinnedVisualPositions.clear();
-        }
-
-        synchronized (adapterVisibleRowViews) {
-            adapterVisibleRowViews.clear();
-        }
-
-        clearAllVisiblePinIndicators();
-
-        activeAdapterProxyFactoryOwner = null;
-        activeAdapterProxyFactoryVisualAdapter = null;
 
         pendingAdapterPositionRemapTarget.remove();
         pendingAdapterPositionRemapKind.remove();
 
-        if (count > 0) {
-            Log.d(TAG, "AdapterPositionMapsCleared"
-                    + " reason=" + reason
-                    + " count=" + count);
-        }
+        Log.d(TAG, "ActivePositionMapCleared"
+                + " reason=" + reason
+                + " removed=" + removed
+                + " ownerIdentity=" + identityString(owner)
+                + " visualAdapterIdentity="
+                + identityString(visualAdapter)
+                + " activeContextPreserved=true");
     }
 
     private static void rememberVisibleBoundRow(
@@ -4008,6 +6820,80 @@ public final class PinPlaylistPatch {
         return refreshed;
     }
 
+    @Nullable
+    private static String findPersistedPlaylistIdBySignature(
+            Context context,
+            @Nullable String rowSignature
+    ) {
+        if (context == null || rowSignature == null) return null;
+
+        String match = null;
+        for (Map.Entry<String, String> entry :
+                PinStore.getPlaylistSignatures(context).entrySet()) {
+            if (!rowSignature.equals(entry.getValue())) continue;
+
+            if (match != null && !match.equals(entry.getKey())) {
+                return null;
+            }
+            match = entry.getKey();
+        }
+
+        return match;
+    }
+
+    private static int refreshVisiblePinIndicatorsFromSignatures(
+            @Nullable Object adapter
+    ) {
+        if (adapter == null) return 0;
+
+        Map<Integer, View> rows;
+        synchronized (adapterVisibleRowViews) {
+            Map<Integer, View> stored =
+                    adapterVisibleRowViews.get(adapter);
+            if (stored == null || stored.isEmpty()) return 0;
+            rows = new LinkedHashMap<>(stored);
+        }
+
+        int refreshed = 0;
+        for (View row : rows.values()) {
+            if (row == null || !row.isAttachedToWindow()) continue;
+
+            String signature = buildRowIdentitySignature(
+                    collectRowTextValues(row)
+            );
+            Context context = row.getContext();
+            String playlistId =
+                    findPersistedPlaylistIdBySignature(context, signature);
+
+            applyDirectFlyoutRowPinIndicator(
+                    row,
+                    PinStore.isPinned(context, playlistId),
+                    playlistId,
+                    "signature"
+            );
+            refreshed++;
+        }
+
+        return refreshed;
+    }
+
+    private static void postSignaturePinIndicatorRefresh(
+            @Nullable Object adapter
+    ) {
+        if (adapter == null) return;
+
+        /*
+         * Row bind hooks already apply the current indicator during a normal
+         * adapter notification. Keep one delayed compatibility fallback for
+         * renderers that do not immediately rebind, instead of scanning every
+         * visible row on three consecutive frames.
+         */
+        mainHandler.postDelayed(
+                () -> refreshVisiblePinIndicatorsFromSignatures(adapter),
+                80L
+        );
+    }
+
     private static void runVisiblePinIndicatorRefreshPass(
             @Nullable Object adapter,
             String pass
@@ -4027,27 +6913,18 @@ public final class PinPlaylistPatch {
     ) {
         if (adapter == null) return;
 
-        mainHandler.post(
-                () -> runVisiblePinIndicatorRefreshPass(
-                        adapter,
-                        "immediate"
-                )
-        );
-
+        /*
+         * A successful full adapter notification re-enters the bind hook,
+         * which applies indicators row-by-row with no hierarchy-wide scan.
+         * This method is only a compatibility fallback, so one settled pass is
+         * sufficient and avoids three complete visible-row traversals.
+         */
         mainHandler.postDelayed(
                 () -> runVisiblePinIndicatorRefreshPass(
                         adapter,
-                        "afterLayout"
+                        "fallback"
                 ),
-                48L
-        );
-
-        mainHandler.postDelayed(
-                () -> runVisiblePinIndicatorRefreshPass(
-                        adapter,
-                        "settled"
-                ),
-                160L
+                80L
         );
     }
 
@@ -4311,10 +7188,10 @@ public final class PinPlaylistPatch {
             }
 
             playlistId = playlistIds.get(visualPosition);
-            isPlaylist = playlistId != null;
             isPinned = pinnedPositions.contains(
                     visualPosition
             );
+            isPlaylist = playlistId != null || isPinned;
         }
 
         RowTextViews rowTextViews =
@@ -4391,7 +7268,7 @@ public final class PinPlaylistPatch {
             );
         }
 
-        if (isPlaylist && rowPinIndicatorLogCount < 40) {
+        if (isPlaylist && rowPinIndicatorLogCount < 12) {
             rowPinIndicatorLogCount++;
 
             Log.d(TAG, "LibraryPinIndicator"
@@ -4654,6 +7531,131 @@ public final class PinPlaylistPatch {
     }
 
     /**
+     * Resource-independent menu icon owned entirely by the extension.
+     *
+     * A normal outline pin represents the Pin action. The Unpin action adds a
+     * diagonal strike. The native ImageView's existing color filter is retained,
+     * so the icon follows YouTube Music's light/dark and enabled-state tint.
+     */
+    private static final class LibraryPinMenuDrawable
+            extends Drawable {
+        private final Paint paint =
+                new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+        private final boolean unpinAction;
+        private final int intrinsicSize;
+
+        private LibraryPinMenuDrawable(
+                boolean unpinAction,
+                int intrinsicSize
+        ) {
+            this.unpinAction = unpinAction;
+            this.intrinsicSize = intrinsicSize;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1.65f);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setColor(0xFFFFFFFF);
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            if (canvas == null || getBounds().isEmpty()) {
+                return;
+            }
+
+            int save = canvas.save();
+            canvas.translate(
+                    getBounds().left,
+                    getBounds().top
+            );
+            canvas.scale(
+                    getBounds().width() / 24.0f,
+                    getBounds().height() / 24.0f
+            );
+
+            int pinSave = canvas.save();
+            canvas.translate(-1.75f, 0.0f);
+            canvas.rotate(26.0f, 12.0f, 12.0f);
+
+            path.reset();
+            path.moveTo(7.22f, 1.00f);
+            path.lineTo(6.72f, 2.09f);
+            path.lineTo(7.09f, 2.61f);
+            path.lineTo(7.98f, 2.83f);
+            path.lineTo(8.13f, 4.07f);
+            path.lineTo(7.67f, 8.87f);
+            path.lineTo(6.87f, 10.00f);
+            path.lineTo(5.96f, 10.72f);
+            path.lineTo(5.48f, 12.26f);
+            path.lineTo(5.46f, 13.54f);
+            path.lineTo(6.30f, 14.15f);
+            path.lineTo(9.41f, 14.41f);
+            path.lineTo(10.26f, 14.80f);
+            path.lineTo(9.63f, 21.04f);
+            path.lineTo(10.11f, 22.70f);
+            path.lineTo(10.52f, 23.00f);
+            path.lineTo(11.04f, 22.63f);
+            path.lineTo(11.78f, 21.35f);
+            path.lineTo(12.30f, 15.80f);
+            path.lineTo(12.70f, 14.83f);
+            path.lineTo(16.85f, 15.30f);
+            path.lineTo(17.39f, 14.76f);
+            path.lineTo(17.70f, 12.24f);
+            path.lineTo(16.28f, 10.17f);
+            path.lineTo(16.89f, 4.00f);
+            path.lineTo(18.22f, 3.65f);
+            path.lineTo(18.59f, 2.65f);
+            path.lineTo(18.00f, 2.17f);
+            path.close();
+
+            canvas.drawPath(path, paint);
+            canvas.restoreToCount(pinSave);
+
+            if (unpinAction) {
+                canvas.drawLine(
+                        4.0f,
+                        4.0f,
+                        20.0f,
+                        20.0f,
+                        paint
+                );
+            }
+
+            canvas.restoreToCount(save);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            paint.setAlpha(alpha);
+            invalidateSelf();
+        }
+
+        @Override
+        public void setColorFilter(
+                @Nullable ColorFilter colorFilter
+        ) {
+            paint.setColorFilter(colorFilter);
+            invalidateSelf();
+        }
+
+        @Override
+        public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
+        }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return intrinsicSize;
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return intrinsicSize;
+        }
+    }
+
+    /**
      * Small resource-independent vector traced from the supplied native-looking push-pin silhouette
      * in the requested mockup. It inherits the subtitle's current text color,
      * so it automatically follows dark/light theme and disabled-state tint.
@@ -4769,10 +7771,7 @@ public final class PinPlaylistPatch {
     ) {
         if (owner == null || expectedSize <= 0) return false;
 
-        Object controller = readFieldByName(owner, "o");
-        Object visualAdapter = controller == null
-                ? null
-                : readFieldByName(controller, "f");
+        Object visualAdapter = findAdapterProxyVisualAdapter(owner);
 
         return visualAdapter != null
                 && hasActiveAdapterPositionMap(
@@ -4801,7 +7800,7 @@ public final class PinPlaylistPatch {
             return false;
         }
 
-        Object sourceAdapter = readFieldByName(owner, "p");
+        Object sourceAdapter = getAdapterProxySourceAdapter(owner);
         Integer sourceCount =
                 invokeIntNoArg(sourceAdapter, "a");
 
@@ -4842,13 +7841,23 @@ public final class PinPlaylistPatch {
             );
         }
 
-        synchronized (adapterVisualToSourcePositions) {
-            adapterVisualToSourcePositions.clear();
-            adapterVisualToSourcePositions.put(
-                    visualAdapter,
-                    visualToSource.clone()
-            );
-        }
+        /*
+         * Do not replace the adapter map before notifying the RecyclerView.
+         * installAdapterPermutation() compares the previous mapping with the
+         * desired mapping, installs each intermediate state, and emits native
+         * item-move notifications. If direct moves drift on a future release,
+         * it falls back to the known full-refresh methods while preserving the
+         * completed position map.
+         *
+         * V115 wrote the desired map first, attempted unrelated no-arg refresh
+         * names, returned false when those names were absent, and the caller
+         * immediately cleared the valid map through pinToggleFallback. That is
+         * why 9.25.50 did not visibly reorder until a manual Library refresh.
+         */
+        String notifications = installAdapterPermutation(
+                visualAdapter,
+                visualToSource
+        );
 
         installAdapterPinIndicatorMetadata(
                 owner,
@@ -4859,24 +7868,280 @@ public final class PinPlaylistPatch {
 
         clearAllVisiblePinIndicators();
 
-        boolean notified =
-                invokeNoArgVoid(visualAdapter, "fq");
+        /*
+         * Match the reliable 9.24 behavior: once the completed permutation and
+         * pin metadata are installed, force one native full adapter rebind.
+         * Item-move notifications update positions, but a full rebind guarantees
+         * every visible row reads the final map and reapplies its pin drawable.
+         */
+        boolean finalFullNotify =
+                invokeAdapterFullRefresh(visualAdapter);
 
-        postVisiblePinIndicatorRefresh(
-                visualAdapter
-        );
+        if (!finalFullNotify) {
+            postVisiblePinIndicatorRefresh(
+                    visualAdapter
+            );
+        }
 
         Log.d(TAG, "PinTogglePositionMapRefreshed"
                 + " adapterIdentity="
                 + identityString(visualAdapter)
                 + " sourceCount=" + sourceCount
-                + " fullNotify=" + notified
+                + " notifications=" + notifications
+                + ",finalFullNotify=" + finalFullNotify
                 + " visualToSource="
                 + java.util.Arrays.toString(
                 visualToSource
         ));
 
+        /*
+         * Reaching this point means the position map was rebuilt and installed.
+         * Notification availability must not be used as the success signal;
+         * otherwise the fallback path destroys the valid mapping.
+         */
         return true;
+    }
+
+    private static boolean refreshStableDelegatePositionMapAfterToggle() {
+        Object adapter = activeLibraryAdapter;
+        if (adapter == null
+                || !"hvx".equals(objectTypeName(adapter))) {
+            return false;
+        }
+
+        Object controller = readFieldByName(adapter, "d");
+        Object listObject = readFieldByName(controller, "b");
+        if (!(listObject instanceof List)) return false;
+
+        int total = ((List<?>) listObject).size();
+        if (total < 2) return false;
+
+        Context context = resolveApplicationContext();
+        if (context == null) return false;
+
+        if (PinStore.getPinnedIds(context).isEmpty()) {
+            int[] nativeOrder = new int[total];
+            for (int position = 0; position < total; position++) {
+                nativeOrder[position] = position;
+            }
+
+            String notifications = installAdapterPermutation(
+                    adapter,
+                    nativeOrder
+            );
+
+            synchronized (adapterVisualPlaylistIds) {
+                adapterVisualPlaylistIds.remove(adapter);
+                adapterPinnedVisualPositions.remove(adapter);
+            }
+            synchronized (stablePrebindKeys) {
+                stablePrebindKeys.remove(adapter);
+            }
+
+            Log.d(TAG, "StableDelegateLiveRestore"
+                    + " total=" + total
+                    + " notifications=" + notifications);
+            return true;
+        }
+
+        stableDelegateLiveUpdateApplied = false;
+        stableDelegateLiveUpdateRequested = true;
+        try {
+            prepareStableLibraryAdapter(adapter);
+        } finally {
+            stableDelegateLiveUpdateRequested = false;
+        }
+
+        return stableDelegateLiveUpdateApplied;
+    }
+
+    /** Installs the 9.15.51 hvx permutation before its first row bind. */
+    public static void prepareStableLibraryAdapter(
+            @Nullable Object adapter
+    ) {
+        if (!isFeatureEnabled()
+                || !hasAnyPinsFast()
+                || !"hvx".equals(objectTypeName(adapter))) {
+            return;
+        }
+
+        Object controller = readFieldByName(adapter, "d");
+        Object listObject = readFieldByName(controller, "b");
+        if (!(listObject instanceof List)) return;
+
+        List<?> items = (List<?>) listObject;
+        int total = items.size();
+        if (total < 10 || total > 18) return;
+
+        Context context = resolveApplicationContext();
+        if (context == null) return;
+
+        List<String> pinOrder =
+                new ArrayList<>(PinStore.getPinnedIds(context));
+        if (pinOrder.isEmpty()) return;
+
+        String prebindKey = stableIdsForItems(items).toString()
+                + "|" + pinOrder;
+
+        synchronized (stablePrebindKeys) {
+            if (prebindKey.equals(stablePrebindKeys.get(adapter))
+                    && hasActiveAdapterPositionMap(adapter, total)) {
+                return;
+            }
+        }
+
+        Object delegate = readFieldByName(controller, "d");
+        Object delegateAdapter = delegate == null
+                ? null
+                : readFieldByName(delegate, "b");
+
+        if (!"bdmq".equals(objectTypeName(delegateAdapter))) {
+            Log.d(TAG, "StableDelegatePrebindSkipped"
+                    + " reason=delegateUnavailable"
+                    + " delegateType="
+                    + objectTypeName(delegateAdapter));
+            return;
+        }
+
+        Object sourceAdapter = readFieldByName(delegateAdapter, "f");
+        Integer sourceCount = invokeIntNoArg(sourceAdapter, "a");
+
+        if (sourceCount == null || sourceCount != total) {
+            Log.d(TAG, "StableDelegatePrebindSkipped"
+                    + " reason=countMismatch"
+                    + " total=" + total
+                    + " sourceCount=" + sourceCount);
+            return;
+        }
+
+        int[] visualToSource = buildAdapterProxyFactoryPositionMap(
+                delegateAdapter,
+                sourceAdapter,
+                sourceCount,
+                "d"
+        );
+
+        if (visualToSource == null) {
+            Log.d(TAG, "StableDelegatePrebindSkipped"
+                    + " reason=sourceMapUnavailable"
+                    + " total=" + total);
+            return;
+        }
+
+        Map<Integer, String> visualPlaylistIds;
+        Set<Integer> pinnedVisualPositions;
+
+        synchronized (ownerVisualPlaylistIds) {
+            Map<Integer, String> ids =
+                    ownerVisualPlaylistIds.get(delegateAdapter);
+            Set<Integer> pinned =
+                    ownerPinnedVisualPositions.get(delegateAdapter);
+
+            visualPlaylistIds = ids == null
+                    ? new LinkedHashMap<Integer, String>()
+                    : new LinkedHashMap<>(ids);
+            pinnedVisualPositions = pinned == null
+                    ? new LinkedHashSet<Integer>()
+                    : new LinkedHashSet<>(pinned);
+        }
+
+        LinkedHashMap<Long, String> playlistIdByStableId =
+                new LinkedHashMap<>();
+        LinkedHashSet<Long> ordinaryStableIds =
+                new LinkedHashSet<>();
+
+        for (Map.Entry<Integer, String> entry
+                : visualPlaylistIds.entrySet()) {
+            int visualPosition = entry.getKey();
+            if (visualPosition < 0
+                    || visualPosition >= visualToSource.length) {
+                continue;
+            }
+
+            int sourcePosition = visualToSource[visualPosition];
+            if (sourcePosition < 0 || sourcePosition >= items.size()) {
+                continue;
+            }
+
+            Object stableIdObject = readFieldByName(
+                    items.get(sourcePosition),
+                    "b"
+            );
+            if (!(stableIdObject instanceof Number)) continue;
+
+            long stableId = ((Number) stableIdObject).longValue();
+            playlistIdByStableId.put(stableId, entry.getValue());
+            ordinaryStableIds.add(stableId);
+        }
+
+        synchronized (adapterVisualPlaylistIds) {
+            adapterVisualPlaylistIds.put(adapter, visualPlaylistIds);
+            adapterPinnedVisualPositions.put(
+                    adapter,
+                    pinnedVisualPositions
+            );
+        }
+        synchronized (adapterPlaylistIds) {
+            adapterPlaylistIds.put(adapter, playlistIdByStableId);
+        }
+        synchronized (adapterOrdinaryPlaylistRows) {
+            adapterOrdinaryPlaylistRows.put(adapter, ordinaryStableIds);
+        }
+        synchronized (stablePrebindKeys) {
+            stablePrebindKeys.put(adapter, prebindKey);
+        }
+
+        activeLibraryAdapter = adapter;
+        activeLibraryBackingList = items;
+        lastKnownLibraryPlaylistCount = visualPlaylistIds.size();
+
+        String notifications;
+        if (stableDelegateLiveUpdateRequested) {
+            notifications = installAdapterPermutation(
+                    adapter,
+                    visualToSource
+            );
+            stableDelegateLiveUpdateApplied = true;
+        } else {
+            synchronized (adapterVisualToSourcePositions) {
+                adapterVisualToSourcePositions.put(
+                        adapter,
+                        visualToSource
+                );
+            }
+            notifications = "prebind";
+        }
+
+        Log.d(TAG, "StableDelegatePrebindInstalled"
+                + " total=" + total
+                + " pinOrder=" + pinOrder
+                + " notifications=" + notifications
+                + " visualToSource="
+                + java.util.Arrays.toString(visualToSource));
+    }
+
+    @Nullable
+    private static List<?> getLibraryAdapterBackingList(
+            @Nullable Object adapter
+    ) {
+        if (adapter == null) return null;
+
+        Object controller = readFieldByName(adapter, "d");
+        Object listObject = readFieldByName(controller, "b");
+        return listObject instanceof List
+                ? (List<?>) listObject
+                : null;
+    }
+
+    private static boolean hasCurrentAdapterPositionMap(
+            @Nullable Object adapter
+    ) {
+        List<?> items = getLibraryAdapterBackingList(adapter);
+        return items != null
+                && hasActiveAdapterPositionMap(
+                adapter,
+                items.size()
+        );
     }
 
     private static boolean hasActiveAdapterPositionMap(
@@ -4900,7 +8165,10 @@ public final class PinPlaylistPatch {
             @Nullable Object adapter,
             String kind
     ) {
-        if (!isFeatureEnabled()) {
+        if (!isFeatureEnabled()
+                || !hasAnyPinsFast()
+                || !isConfirmedLibraryAdapterInstance(adapter)
+                || !hasCurrentAdapterPositionMap(adapter)) {
             pendingAdapterPositionRemapTarget.remove();
             pendingAdapterPositionRemapKind.remove();
             return;
@@ -4961,6 +8229,27 @@ public final class PinPlaylistPatch {
         }
 
         return sourcePosition;
+    }
+
+    private static int mappedSourcePosition(
+            @Nullable Object adapter,
+            int visualPosition
+    ) {
+        if (adapter == null || visualPosition < 0) {
+            return visualPosition;
+        }
+
+        synchronized (adapterVisualToSourcePositions) {
+            int[] visualToSource =
+                    adapterVisualToSourcePositions.get(adapter);
+
+            if (visualToSource != null
+                    && visualPosition < visualToSource.length) {
+                return visualToSource[visualPosition];
+            }
+        }
+
+        return visualPosition;
     }
 
 
@@ -5492,7 +8781,7 @@ public final class PinPlaylistPatch {
                     + " holderType=" + objectTypeName(holder));
         }
 
-        if (!isLibraryAdapter(adapter)
+        if (!isConfirmedLibraryAdapterInstance(adapter)
                 || holder == null) {
             return;
         }
@@ -5506,14 +8795,21 @@ public final class PinPlaylistPatch {
             return;
         }
 
-        Object controller = readFieldByName(adapter, "d");
-        Object listObject = readFieldByName(controller, "b");
-        if (!(listObject instanceof List)) return;
+        List<?> items = getLibraryAdapterBackingList(adapter);
+        if (items == null
+                || !hasActiveAdapterPositionMap(
+                adapter,
+                items.size()
+        )) {
+            return;
+        }
 
-        List<?> items = (List<?>) listObject;
         if (position < 0 || position >= items.size()) return;
 
-        Object item = items.get(position);
+        int sourcePosition = mappedSourcePosition(adapter, position);
+        if (sourcePosition < 0 || sourcePosition >= items.size()) return;
+
+        Object item = items.get(sourcePosition);
         Object stableIdObject = readFieldByName(item, "b");
         if (!(stableIdObject instanceof Number)) return;
 
@@ -5585,6 +8881,22 @@ public final class PinPlaylistPatch {
             int scheduledPosition,
             long stableId
     ) {
+        captureBoundLibraryRow(
+                adapter,
+                holder,
+                scheduledPosition,
+                stableId,
+                false
+        );
+    }
+
+    private static void captureBoundLibraryRow(
+            Object adapter,
+            Object holder,
+            int scheduledPosition,
+            long stableId,
+            boolean deferred
+    ) {
         if (isAdapterBindCaptureSuppressed(adapter)) {
             return;
         }
@@ -5607,22 +8919,65 @@ public final class PinPlaylistPatch {
 
         View itemView = (View) itemViewObject;
         List<String> rowTexts = collectRowTextValues(itemView);
+
+        if (rowTexts.isEmpty() && !deferred) {
+            itemView.postDelayed(
+                    () -> captureBoundLibraryRow(
+                            adapter,
+                            holder,
+                            scheduledPosition,
+                            stableId,
+                            true
+                    ),
+                    32L
+            );
+            return;
+        }
+
         String rowText = rowTexts.isEmpty()
                 ? "[]"
                 : rowTexts.toString();
         String rowSignature =
                 buildRowIdentitySignature(rowTexts);
 
-        Set<String> ids = collectPlaylistIdsFromBoundView(itemView);
-        String candidatePlaylistId = findBestPlaylistId(ids);
+        rememberAdapterNativeOrder(adapter, items);
+        synchronized (adapterOrdinaryPlaylistRows) {
+            Set<Long> ordinaryRows =
+                    adapterOrdinaryPlaylistRows.get(adapter);
+
+            if (ordinaryRows == null) {
+                ordinaryRows = new LinkedHashSet<>();
+                adapterOrdinaryPlaylistRows.put(adapter, ordinaryRows);
+            }
+
+            if (isOrdinaryPlaylistRow(rowTexts)) {
+                ordinaryRows.add(stableId);
+            } else {
+                ordinaryRows.remove(stableId);
+            }
+        }
+
+        /*
+         * Menu opening persists the canonical ID-to-row-signature mapping.
+         * Binding must stay cheap; walking every row's listener/tag graph made
+         * Library refreshes take several seconds.
+         */
+        String candidatePlaylistId = null;
+        Context context = itemView.getContext();
         String playlistId = resolveBoundPlaylistId(
+                context,
                 rowSignature,
                 candidatePlaylistId
         );
 
-        rememberAdapterNativeOrder(adapter, items);
-
         if (playlistId == null) {
+            applyDirectFlyoutRowPinIndicator(
+                    itemView,
+                    false,
+                    null,
+                    "bound"
+            );
+
             if (boundRowNoIdLogCount < 40
                     && items.size() >= 10) {
                 boundRowNoIdLogCount++;
@@ -5659,8 +9014,6 @@ public final class PinPlaylistPatch {
                     + " rowText=" + rowText);
         }
 
-        Context context = itemView.getContext();
-
         if (context != null
                 && rowSignature != null
                 && !rowSignature.isEmpty()) {
@@ -5670,6 +9023,16 @@ public final class PinPlaylistPatch {
                     rowSignature
             );
         }
+
+        activeLibraryAdapter = adapter;
+        activeLibraryBackingList = items;
+
+        applyDirectFlyoutRowPinIndicator(
+                itemView,
+                context != null && PinStore.isPinned(context, playlistId),
+                playlistId,
+                "bound"
+        );
 
         if (context != null
                 && items.size() >= 10
@@ -5702,6 +9065,7 @@ public final class PinPlaylistPatch {
 
     @Nullable
     private static String resolveBoundPlaylistId(
+            @Nullable Context context,
             @Nullable String rowSignature,
             @Nullable String candidatePlaylistId
     ) {
@@ -5709,11 +9073,39 @@ public final class PinPlaylistPatch {
             return candidatePlaylistId;
         }
 
+        if (candidatePlaylistId == null && context != null) {
+            for (Map.Entry<String, String> entry :
+                    PinStore.getPlaylistSignatures(context).entrySet()) {
+                if (!rowSignature.equals(entry.getValue())) continue;
+
+                if (candidatePlaylistId != null
+                        && !candidatePlaylistId.equals(entry.getKey())) {
+                    synchronized (playlistIdByRowSignature) {
+                        ambiguousRowSignatures.add(rowSignature);
+                    }
+                    return null;
+                }
+
+                candidatePlaylistId = entry.getKey();
+            }
+        }
+
         synchronized (playlistIdByRowSignature) {
+            if (ambiguousRowSignatures.contains(rowSignature)) {
+                return null;
+            }
+
             String knownPlaylistId =
                     playlistIdByRowSignature.get(rowSignature);
 
             if (knownPlaylistId != null) {
+                if (candidatePlaylistId != null
+                        && !knownPlaylistId.equals(candidatePlaylistId)) {
+                    playlistIdByRowSignature.remove(rowSignature);
+                    rowSignatureByPlaylistId.remove(knownPlaylistId);
+                    ambiguousRowSignatures.add(rowSignature);
+                    return null;
+                }
                 return knownPlaylistId;
             }
 
@@ -5748,6 +9140,7 @@ public final class PinPlaylistPatch {
             if (playlistIdByRowSignature.size() > 256) {
                 playlistIdByRowSignature.clear();
                 rowSignatureByPlaylistId.clear();
+                ambiguousRowSignatures.clear();
 
                 playlistIdByRowSignature.put(
                         rowSignature,
@@ -5781,6 +9174,19 @@ public final class PinPlaylistPatch {
                 : "";
 
         return title + "\\u001f" + subtitle;
+    }
+
+    private static boolean isOrdinaryPlaylistRow(
+            @Nullable List<String> rowTexts
+    ) {
+        if (rowTexts == null || rowTexts.size() < 2) return false;
+
+        String subtitle = rowTexts.get(1);
+        if (subtitle == null) return false;
+
+        subtitle = subtitle.trim();
+        return subtitle.equals("Playlist")
+                || subtitle.startsWith("Playlist ");
     }
 
     private static String normalizeRowIdentityText(
@@ -6117,6 +9523,13 @@ public final class PinPlaylistPatch {
                     synchronized (adapterPlaylistIds) {
                         adapterPlaylistIds.remove(adapter);
                     }
+                    synchronized (adapterOrdinaryPlaylistRows) {
+                        adapterOrdinaryPlaylistRows.remove(adapter);
+                    }
+                    synchronized (adapterVisualToSourcePositions) {
+                        adapterVisualToSourcePositions.remove(adapter);
+                    }
+
                 }
 
                 Log.d(TAG, "Captured Library native order"
@@ -6256,7 +9669,7 @@ public final class PinPlaylistPatch {
         }
 
         boolean remapNotify =
-                invokeNoArgVoid(adapter, "fq");
+                invokeAdapterFullRefresh(adapter);
 
         Log.d(TAG, "Detected Library order change during bind suppression"
                 + " remapNotify=" + remapNotify
@@ -6406,6 +9819,14 @@ public final class PinPlaylistPatch {
             mappings = new LinkedHashMap<>(existing);
         }
 
+        Set<Long> ordinaryRowIds;
+        synchronized (adapterOrdinaryPlaylistRows) {
+            Set<Long> existing = adapterOrdinaryPlaylistRows.get(adapter);
+            ordinaryRowIds = existing == null
+                    ? Collections.<Long>emptySet()
+                    : new LinkedHashSet<>(existing);
+        }
+
         rememberAdapterNativeOrder(adapter, list);
 
         List<Long> base;
@@ -6459,16 +9880,21 @@ public final class PinPlaylistPatch {
             long stableId = ((Number) value).longValue();
             String playlistId = mappings.get(stableId);
 
-            if (!isPersistentPlaylistId(playlistId)) {
+            if (!ordinaryRowIds.contains(stableId)
+                    && !isPersistentPlaylistId(playlistId)) {
                 continue;
             }
 
             playlistSlots.add(index);
-            distinctPlaylistIds.add(playlistId);
-            playlistItemById.put(playlistId, item);
-            playlistStableIdById.put(playlistId, stableId);
 
-            if (!pinnedIds.contains(playlistId)) {
+            if (isPersistentPlaylistId(playlistId)) {
+                distinctPlaylistIds.add(playlistId);
+                playlistItemById.put(playlistId, item);
+                playlistStableIdById.put(playlistId, stableId);
+            }
+
+            if (!isPersistentPlaylistId(playlistId)
+                    || !pinnedIds.contains(playlistId)) {
                 unpinned.add(item);
             }
         }
@@ -6489,27 +9915,29 @@ public final class PinPlaylistPatch {
             pinnedStableIds.add(stableId);
         }
 
-        if (distinctPlaylistIds.size() < 3
-                && adapter != activeLibraryAdapter) {
-            return;
-        }
+        if (playlistSlots.size() < 3) return;
 
-        if (distinctPlaylistIds.size() >= 3) {
-            lastKnownLibraryPlaylistCount =
-                    distinctPlaylistIds.size();
+        lastKnownLibraryPlaylistCount = playlistSlots.size();
 
-            synchronized (adapterExpectedPlaylistCount) {
-                adapterExpectedPlaylistCount.put(
-                        adapter,
-                        distinctPlaylistIds.size()
-                );
-            }
+        synchronized (adapterExpectedPlaylistCount) {
+            adapterExpectedPlaylistCount.put(
+                    adapter,
+                    playlistSlots.size()
+            );
         }
 
         List<Object> partitionedPlaylists =
                 new ArrayList<>(playlistSlots.size());
         partitionedPlaylists.addAll(pinned);
         partitionedPlaylists.addAll(unpinned);
+
+        if (partitionedPlaylists.size() != playlistSlots.size()) {
+            Log.e(TAG, "Skipping reorder: ambiguous playlist identity"
+                    + " slots=" + playlistSlots.size()
+                    + " partitioned=" + partitionedPlaylists.size()
+                    + " distinctIds=" + distinctPlaylistIds.size());
+            return;
+        }
 
         List<Object> desired = new ArrayList<>(nativeOrder);
 
@@ -6520,6 +9948,80 @@ public final class PinPlaylistPatch {
             );
         }
 
+        LinkedHashMap<Integer, String> visualPinnedIds =
+                new LinkedHashMap<>();
+        LinkedHashSet<Integer> pinnedVisualPositions =
+                new LinkedHashSet<>();
+        int pinnedVisualIndex = 0;
+        for (String pinnedId : pinnedOrder) {
+            if (!playlistItemById.containsKey(pinnedId)
+                    || pinnedVisualIndex >= playlistSlots.size()) {
+                continue;
+            }
+            int visualPosition =
+                    playlistSlots.get(pinnedVisualIndex++);
+            visualPinnedIds.put(visualPosition, pinnedId);
+            pinnedVisualPositions.add(visualPosition);
+        }
+        synchronized (adapterVisualPlaylistIds) {
+            adapterVisualPlaylistIds.put(adapter, visualPinnedIds);
+            adapterPinnedVisualPositions.put(
+                    adapter,
+                    pinnedVisualPositions
+            );
+        }
+
+        if (nativeOrder.size() == desired.size()
+                && !nativeOrder.isEmpty()) {
+            int[] permutation = new int[desired.size()];
+            boolean validPermutation = true;
+
+            for (int position = 0;
+                 position < desired.size();
+                 position++) {
+                int sourcePosition = indexOfIdentity(
+                        nativeOrder,
+                        desired.get(position),
+                        0
+                );
+                if (sourcePosition < 0) {
+                    validPermutation = false;
+                    break;
+                }
+                permutation[position] = sourcePosition;
+            }
+
+            if (validPermutation) {
+                List<Long> nativeStableIds =
+                        stableIdsForItems(nativeOrder);
+
+                PinStore.setLibraryPermutation(
+                        context,
+                        pinnedIds,
+                        permutation,
+                        objectTypeName(nativeOrder.get(0)),
+                        playlistSlots,
+                        nativeStableIds
+                );
+            }
+        }
+
+        if (hasActiveAdapterPositionMap(adapter, list.size())) {
+            synchronized (adapterLastAppliedOrder) {
+                adapterLastAppliedOrder.put(
+                        adapter,
+                        stableIdsForItems(desired)
+                );
+            }
+            Log.d(TAG, "Pinned Library order already virtualized"
+                    + " total=" + list.size()
+                    + " pinOrder=" + pinnedOrder
+                    + " playlistSlots=" + playlistSlots);
+            refreshVisiblePinIndicators(adapter);
+            postSignaturePinIndicatorRefresh(adapter);
+            return;
+        }
+
         if (sameIdentityOrder(list, desired)) {
             synchronized (adapterLastAppliedOrder) {
                 adapterLastAppliedOrder.put(
@@ -6527,6 +10029,8 @@ public final class PinPlaylistPatch {
                         stableIdsForItems(list)
                 );
             }
+            refreshVisiblePinIndicators(adapter);
+            postSignaturePinIndicatorRefresh(adapter);
             return;
         }
 
@@ -6618,9 +10122,8 @@ public final class PinPlaylistPatch {
                 Object movedItem = list.remove(fallbackSource);
                 list.add(targetIndex, movedItem);
 
-                boolean moveNotified = invokeTwoIntVoid(
+                boolean moveNotified = invokeAdapterMove(
                         adapter,
-                        "jv",
                         fallbackSource,
                         targetIndex
                 );
@@ -6647,7 +10150,7 @@ public final class PinPlaylistPatch {
         }
 
         if (fallbackFullNotify) {
-            fallbackFullNotify = invokeNoArgVoid(adapter, "fq");
+            fallbackFullNotify = invokeAdapterFullRefresh(adapter);
         }
 
         Log.d(TAG, "Applied pinned Library order"
@@ -6664,6 +10167,108 @@ public final class PinPlaylistPatch {
                 + fallbackMoveNotifications
                 + " fallbackFullNotify=" + fallbackFullNotify
                 + " order=" + applied);
+
+        refreshVisiblePinIndicators(adapter);
+        postSignaturePinIndicatorRefresh(adapter);
+    }
+
+    private static String installAdapterPermutation(
+            Object adapter,
+            int[] desired
+    ) {
+        int[] previous;
+
+        synchronized (adapterVisualToSourcePositions) {
+            int[] stored = adapterVisualToSourcePositions.get(adapter);
+
+            if (stored == null || stored.length != desired.length) {
+                previous = new int[desired.length];
+                for (int index = 0; index < previous.length; index++) {
+                    previous[index] = index;
+                }
+            } else {
+                previous = stored.clone();
+            }
+        }
+
+        if (java.util.Arrays.equals(previous, desired)) {
+            synchronized (adapterVisualToSourcePositions) {
+                adapterVisualToSourcePositions.put(
+                        adapter,
+                        desired.clone()
+                );
+            }
+            return "unchanged";
+        }
+
+        int[] working = previous.clone();
+        List<String> moves = new ArrayList<>();
+        boolean movesSucceeded = true;
+
+        for (int target = 0; target < desired.length; target++) {
+            int desiredSource = desired[target];
+            if (working[target] == desiredSource) continue;
+
+            int source = -1;
+            for (int index = target + 1;
+                 index < working.length;
+                 index++) {
+                if (working[index] == desiredSource) {
+                    source = index;
+                    break;
+                }
+            }
+
+            if (source < 0) {
+                movesSucceeded = false;
+                break;
+            }
+
+            int moved = working[source];
+            System.arraycopy(
+                    working,
+                    target,
+                    working,
+                    target + 1,
+                    source - target
+            );
+            working[target] = moved;
+
+            synchronized (adapterVisualToSourcePositions) {
+                adapterVisualToSourcePositions.put(
+                        adapter,
+                        working.clone()
+                );
+            }
+
+            boolean notified = invokeAdapterMove(
+                    adapter,
+                    source,
+                    target
+            );
+            moves.add(source + "->" + target + ":" + notified);
+
+            if (!notified) {
+                movesSucceeded = false;
+                break;
+            }
+        }
+
+        if (movesSucceeded
+                && java.util.Arrays.equals(working, desired)) {
+            return "moves=" + moves;
+        }
+
+        synchronized (adapterVisualToSourcePositions) {
+            adapterVisualToSourcePositions.put(
+                    adapter,
+                    desired.clone()
+            );
+        }
+
+        boolean fullNotify = invokeAdapterFullRefresh(adapter);
+        return "moves=" + moves
+                + ",fallbackFullNotify=" + fullNotify;
     }
 
     private static boolean isPersistentPlaylistId(
@@ -6709,6 +10314,35 @@ public final class PinPlaylistPatch {
         return true;
     }
 
+
+    private static boolean invokeAdapterMove(
+            Object adapter,
+            int source,
+            int target
+    ) {
+        for (String methodName : ADAPTER_MOVE_NOTIFY_METHODS) {
+            if (invokeTwoIntVoid(
+                    adapter,
+                    methodName,
+                    source,
+                    target
+            )) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean invokeAdapterFullRefresh(Object adapter) {
+        for (String methodName : ADAPTER_FULL_NOTIFY_METHODS) {
+            if (invokeNoArgVoid(adapter, methodName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static boolean invokeTwoIntVoid(
             Object receiver,
@@ -6952,7 +10586,6 @@ public final class PinPlaylistPatch {
             return;
         }
 
-        activeFlyoutRowPlaylistId = playlistId;
         rememberPendingFlyoutViewPlaylistId(playlistId);
 
         View descendant = clickedView;
@@ -6986,7 +10619,11 @@ public final class PinPlaylistPatch {
             View directChild,
             String playlistId
     ) {
-        Object adapter = readFieldByName(recycler, "m");
+        Object adapter = invokeNoArg(recycler, "getAdapter");
+
+        if (!isLibraryAdapter(adapter)) {
+            adapter = readFieldByName(recycler, "m");
+        }
 
         if (!isLibraryAdapter(adapter)) {
             adapter = findFieldValueByRuntimeTypes(
@@ -7007,6 +10644,8 @@ public final class PinPlaylistPatch {
                     + " listType=" + objectTypeName(listObject));
             return;
         }
+
+        activeFlyoutRowPlaylistId = playlistId;
 
         List<?> items = (List<?>) listObject;
         int childIndex = -1;
@@ -7043,9 +10682,12 @@ public final class PinPlaylistPatch {
                 holderPrimitiveFields
         );
 
-        Long stableRowId = resolvedPosition >= 0
-                && resolvedPosition < stableIds.size()
-                ? stableIds.get(resolvedPosition)
+        int resolvedSourcePosition =
+                mappedSourcePosition(adapter, resolvedPosition);
+
+        Long stableRowId = resolvedSourcePosition >= 0
+                && resolvedSourcePosition < stableIds.size()
+                ? stableIds.get(resolvedSourcePosition)
                 : null;
 
         activeFlyoutAdapterPosition = resolvedPosition;
@@ -7053,6 +10695,20 @@ public final class PinPlaylistPatch {
         activeFlyoutRowView = directChild;
         activeLibraryAdapter = adapter;
         activeLibraryBackingList = items;
+
+        String rowSignature = buildRowIdentitySignature(
+                collectRowTextValues(directChild)
+        );
+        Context context = directChild.getContext();
+
+        if (rowSignature != null && context != null) {
+            resolveBoundPlaylistId(context, rowSignature, playlistId);
+            PinStore.setPlaylistSignature(
+                    context,
+                    playlistId,
+                    rowSignature
+            );
+        }
 
         if (stableRowId != null) {
             rememberAdapterPlaylistId(
@@ -7076,6 +10732,7 @@ public final class PinPlaylistPatch {
                 + " holderFields=" + holderPrimitiveFields
                 + " stableIds=" + stableIds
                 + " resolvedPosition=" + resolvedPosition
+                + " resolvedSourcePosition=" + resolvedSourcePosition
                 + " stableRowId=" + stableRowId);
     }
 
@@ -7564,6 +11221,7 @@ public final class PinPlaylistPatch {
         long now = android.os.SystemClock.elapsedRealtime();
 
         activeFlyoutPlaylistId = null;
+        activeFlyoutHasSpeedDial = false;
         activeFlyoutCapturedAtMs = 0L;
 
         if (id == null) return null;
@@ -8022,6 +11680,6 @@ public final class PinPlaylistPatch {
         return null;
     }
 
-    private PinPlaylistPatch() {
+    private PinPlaylistPatch924() {
     }
 }

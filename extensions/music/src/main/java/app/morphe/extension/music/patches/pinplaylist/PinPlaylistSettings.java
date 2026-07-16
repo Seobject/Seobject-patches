@@ -1,11 +1,11 @@
-package app.morphe.extension.music.patches.pinplaylist;
-
-import app.morphe.extension.shared.settings.BooleanSetting;
+package app.morphe.extension.music.patches.pinplaylist924;
 
 import static java.lang.Boolean.TRUE;
 
+import app.morphe.extension.shared.settings.BooleanSetting;
+
 /**
- * The only settings declared by the standalone Pin playlists extension.
+ * Runtime settings owned by the standalone Pin playlists extension.
  */
 public final class PinPlaylistSettings {
     public static final BooleanSetting ENABLED =

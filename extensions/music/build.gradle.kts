@@ -20,8 +20,9 @@ afterEvaluate {
         setSource(
             fileTree("src/main/java") {
                 include(
-                    "app/morphe/extension/music/patches/pinplaylist/PinPlaylistPatch.java",
-                    "app/morphe/extension/music/patches/pinplaylist/PinStore.java",
+                    "app/morphe/extension/music/patches/pinplaylist924/PinPlaylistPatch924.java",
+                    "app/morphe/extension/music/patches/pinplaylist924/PinPlaylistSettings.java",
+                    "app/morphe/extension/music/patches/pinplaylist924/PinStore.java",
                 )
             }
         )

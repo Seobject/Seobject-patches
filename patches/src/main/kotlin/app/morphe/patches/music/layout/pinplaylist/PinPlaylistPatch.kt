@@ -5,7 +5,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLa
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.smali.ExternalLabel
-import app.seobject.patches.music.Compatibility.COMPATIBILITY_YOUTUBE_MUSIC
+import app.seobject.patches.music.settings.pinPlaylistSettingsResourcePatch
 import app.morphe.util.cloneMutable
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
@@ -13,10 +13,11 @@ import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 private const val EXTENSION_CLASS =
-    "Lapp/morphe/extension/music/patches/pinplaylist/PinPlaylistPatch;"
+    "Lapp/morphe/extension/music/patches/pinplaylist924/PinPlaylistPatch924;"
 
 /**
  * Matches MenuItemPresenter.onClick(View).
@@ -75,12 +76,15 @@ internal object PlaylistAdapterProxyRenderInfoFingerprint : Fingerprint(
             returnType = "Ljava/lang/Object;",
         ),
     ),
+    custom = { method, _ ->
+        method.returnType.startsWith("L") ||
+            method.returnType.startsWith("[")
+    },
 )
 
 /**
- * Matches qot.j(menu, source, presenter, context), the flyout creation path.
- * This and the exact qot.k search near the bottom are the main flyout symbols
- * to re-check when updating supported YouTube Music versions.
+ * Matches the flyout creation method structurally through its stable bottom-sheet tag.
+ * No obfuscated defining-class or method name is required.
  */
 internal object PlaylistFlyoutSourceFingerprint : Fingerprint(
     returnType = "V",
@@ -94,19 +98,244 @@ internal object PlaylistFlyoutSourceFingerprint : Fingerprint(
     },
 )
 
+/**
+ * Matches YouTube Music's native ordinary command-row factory.
+ *
+ * The protobuf row, title-message, and command classes are renamed between
+ * releases. Match the stable construction shape instead of any obfuscated
+ * return type:
+ *   - static Context + content-id factory,
+ *   - Context.getString(int),
+ *   - one String -> protobuf title-message factory,
+ *   - one String, String, int, boolean -> protobuf command factory.
+ *
+ * The concrete row and title types are derived from the matched method when
+ * the hook is installed, so this fingerprint spans the buzr, bwpd, bwuu, and
+ * bwyn menu-model families without version-number checks.
+ */
+internal object PlaylistNativeMenuRowFactoryFingerprint : Fingerprint(
+    parameters = listOf(
+        "Landroid/content/Context;",
+        "Ljava/lang/String;",
+    ),
+    filters = listOf(
+        methodCall(
+            definingClass = "Landroid/content/Context;",
+            name = "getString",
+            parameters = listOf("I"),
+            returnType = "Ljava/lang/String;",
+        ),
+        methodCall(
+            parameters = listOf("Ljava/lang/String;"),
+        ),
+        methodCall(
+            parameters = listOf(
+                "Ljava/lang/String;",
+                "Ljava/lang/String;",
+                "I",
+                "Z",
+            ),
+        ),
+    ),
+    custom = { method, _ ->
+        method.implementation?.let { implementation ->
+            val staticReferenceCalls =
+                implementation.instructions.mapNotNull { instruction ->
+                    if (instruction.opcode != Opcode.INVOKE_STATIC &&
+                        instruction.opcode != Opcode.INVOKE_STATIC_RANGE
+                    ) {
+                        return@mapNotNull null
+                    }
+
+                    val reference =
+                        (instruction as? ReferenceInstruction)
+                            ?.reference as? MethodReference
+                                ?: return@mapNotNull null
+
+                    if (!reference.returnType.startsWith("L")) {
+                        return@mapNotNull null
+                    }
+
+                    reference
+                }
+
+            val titleFactoryCount =
+                staticReferenceCalls.count { reference ->
+                    reference.parameterTypes.map { it.toString() } ==
+                        listOf("Ljava/lang/String;")
+                }
+
+            val commandFactoryCount =
+                staticReferenceCalls.count { reference ->
+                    reference.parameterTypes.map { it.toString() } ==
+                        listOf(
+                            "Ljava/lang/String;",
+                            "Ljava/lang/String;",
+                            "I",
+                            "Z",
+                        )
+                }
+
+            (method.accessFlags and 0x8) != 0 &&
+                method.returnType.startsWith("L") &&
+                titleFactoryCount == 1 &&
+                commandFactoryCount == 1
+        } ?: false
+    },
+)
+
 val pinPlaylistPatch = bytecodePatch(
-    name = "Pin playlists (dev)",
-    description = "Experimental YouTube Music 9.24.51, 9.25.50, and 9.26.51 patch that replaces Speed Dial pinning with persistent Library playlist pinning.",
+    name = "Pin playlists",
+    description = "Pins playlists to the top of the YouTube Music Library.",
 ) {
-    compatibleWith(COMPATIBILITY_YOUTUBE_MUSIC)
-    extendWith("extensions/music.mpe")
+    dependsOn(pinPlaylistSettingsResourcePatch)
+    extendWith("extensions/pinplaylist.mpe")
 
     execute {
         /*
-         * Part 1: intercept the existing Pin/Unpin Speed Dial flyout action.
+         * Part 1: consume only the fresh local Library Pin/Unpin menu action.
          */
         val menuItemPresenterClass =
             PlaylistMenuItemPresenterClassFingerprint.classDef
+
+        /*
+         * Apply the extension-owned icon immediately after YouTube Music calls
+         * its native visual binder. The binder receiver register is guaranteed
+         * to be the MenuItemPresenter instance because it is taken directly
+         * from the matched instance invocation.
+         *
+         * Do not inject inside the visual binder and assume p0 survives. The
+         * app is free to reuse the physical parameter register after entry, as
+         * 9.24.51 does. Hooking the caller avoids that register-liveness trap
+         * without allocating scratch registers or naming any obfuscated class,
+         * method, field, row type, or native icon enum.
+         */
+        val nativeIconGetter =
+            menuItemPresenterClass.methods.single { method ->
+                method.parameters.isEmpty() &&
+                    method.returnType == "Landroid/widget/ImageView;" &&
+                    (method.accessFlags and 0x8) == 0
+            }
+
+        val nativeIconGetterReference =
+            "${menuItemPresenterClass.type}->" +
+                "${nativeIconGetter.name}()" +
+                nativeIconGetter.returnType
+
+        val menuItemVisualBindMethod =
+            menuItemPresenterClass.methods.single { method ->
+                val implementation = method.implementation
+                    ?: return@single false
+
+                val invokesNativeIconGetter =
+                    implementation.instructions.any { instruction ->
+                        val reference =
+                            (instruction as? ReferenceInstruction)
+                                ?.reference as? MethodReference
+
+                        reference != null &&
+                            "${reference.definingClass}->" +
+                                "${reference.name}(" +
+                                reference.parameterTypes.joinToString("") +
+                                ")${reference.returnType}" ==
+                                nativeIconGetterReference
+                    }
+
+                val writesNativeImageView =
+                    implementation.instructions.any { instruction ->
+                        val reference =
+                            (instruction as? ReferenceInstruction)
+                                ?.reference as? MethodReference
+
+                        reference != null &&
+                            reference.definingClass ==
+                                "Landroid/widget/ImageView;" &&
+                            reference.name in setOf(
+                                "setImageResource",
+                                "setImageDrawable",
+                            )
+                    }
+
+                method.returnType == "V" &&
+                    method.parameters.isEmpty() &&
+                    (method.accessFlags and 0x8) == 0 &&
+                    invokesNativeIconGetter &&
+                    writesNativeImageView
+            }
+
+        val menuItemVisualBindReference =
+            "${menuItemVisualBindMethod.definingClass}->" +
+                "${menuItemVisualBindMethod.name}(" +
+                menuItemVisualBindMethod.parameters.joinToString("") {
+                    parameter -> parameter.type
+                } +
+                ")${menuItemVisualBindMethod.returnType}"
+
+        val visualBindCallSites =
+            menuItemPresenterClass.methods.flatMap { caller ->
+                val implementation = caller.implementation
+                    ?: return@flatMap emptyList()
+
+                implementation.instructions
+                    .withIndex()
+                    .mapNotNull { indexed ->
+                        val reference =
+                            (indexed.value as? ReferenceInstruction)
+                                ?.reference as? MethodReference
+                                ?: return@mapNotNull null
+
+                        val descriptor =
+                            "${reference.definingClass}->" +
+                                "${reference.name}(" +
+                                reference.parameterTypes.joinToString("") +
+                                ")${reference.returnType}"
+
+                        if (descriptor != menuItemVisualBindReference) {
+                            return@mapNotNull null
+                        }
+
+                        val receiverRegister =
+                            when (val instruction = indexed.value) {
+                                is FiveRegisterInstruction ->
+                                    instruction.registerC
+                                is RegisterRangeInstruction ->
+                                    instruction.startRegister
+                                else -> error(
+                                    "Unsupported MenuItemPresenter visual-bind invoke"
+                                )
+                            }
+
+                        Triple(
+                            caller,
+                            indexed.index,
+                            receiverRegister,
+                        )
+                    }
+            }
+
+        check(visualBindCallSites.isNotEmpty()) {
+            "Expected at least one MenuItemPresenter visual-bind call site"
+        }
+
+        visualBindCallSites
+            .groupBy { callSite -> callSite.first }
+            .forEach { (caller, callSites) ->
+                callSites
+                    .sortedByDescending { callSite ->
+                        callSite.second
+                    }
+                    .forEach { callSite ->
+                        val presenterRegister =
+                            callSite.third
+
+                        caller.addInstructionsWithLabels(
+                            callSite.second + 1,
+                            """
+                                invoke-static/range {v$presenterRegister .. v$presenterRegister}, $EXTENSION_CLASS->styleInjectedLibraryPinPresenter(Ljava/lang/Object;)V
+                            """
+                        )
+                    }
+            }
 
         val originalMethod = menuItemPresenterClass.methods.single { method ->
             method.name == "onClick" &&
@@ -153,156 +382,6 @@ val pinPlaylistPatch = bytecodePatch(
         )
 
         /*
-         * The active Speed Dial renderer is a bwzj toggle row. qup.d() checks
-         * sharedToggleMenuItemMutations and can replace that row's model just
-         * before setting its title, which would turn our clone back into a
-         * second native "Pin to Speed Dial" item. Keep native behavior for
-         * stock rows, but force the comparison to see our cloned row as
-         * already synchronized.
-         */
-        val menuItemBindMethod =
-            menuItemPresenterClass.methods.single { method ->
-                method.returnType == "V" &&
-                    method.parameters.isEmpty() &&
-                    method.implementation?.instructions?.any { instruction ->
-                        val reference =
-                            (instruction as? ReferenceInstruction)
-                                ?.reference as? MethodReference
-
-                        reference?.definingClass ==
-                            "Landroid/widget/TextView;" &&
-                            reference.name == "setText" &&
-                            reference.returnType == "V" &&
-                            reference.parameterTypes
-                                .map { it.toString() } ==
-                            listOf("Ljava/lang/CharSequence;")
-                    } == true
-            }
-
-        val bindInstructions =
-            menuItemBindMethod.implementation!!.instructions
-
-        val nativeToggleCandidates =
-            bindInstructions.indices.mapNotNull { callIndex ->
-                val instruction = bindInstructions[callIndex]
-                val reference =
-                    (instruction as? ReferenceInstruction)
-                        ?.reference as? MethodReference
-                        ?: return@mapNotNull null
-
-                val parameterTypes =
-                    reference.parameterTypes.map { it.toString() }
-                if (
-                    reference.returnType != "Z" ||
-                    parameterTypes.size != 1 ||
-                    parameterTypes.single().firstOrNull() !in setOf('L', '[')
-                ) {
-                    return@mapNotNull null
-                }
-
-                val moveResultIndex = callIndex + 1
-                if (
-                    moveResultIndex >= bindInstructions.size ||
-                    bindInstructions[moveResultIndex].opcode != Opcode.MOVE_RESULT
-                ) {
-                    return@mapNotNull null
-                }
-
-                val nativeRegister =
-                    (bindInstructions[moveResultIndex] as OneRegisterInstruction)
-                        .registerA
-                val modelIndex =
-                    (moveResultIndex + 1 until
-                        minOf(bindInstructions.size, moveResultIndex + 24))
-                        .firstOrNull { index ->
-                            bindInstructions[index].opcode == Opcode.IGET_BOOLEAN
-                        } ?: return@mapNotNull null
-                val modelRegister =
-                    (bindInstructions[modelIndex] as TwoRegisterInstruction)
-                        .registerA
-                val comparisonIndex =
-                    (modelIndex + 1 until
-                        minOf(bindInstructions.size, modelIndex + 12))
-                        .firstOrNull { index ->
-                            val comparison =
-                                bindInstructions[index] as? TwoRegisterInstruction
-                                    ?: return@firstOrNull false
-
-                            bindInstructions[index].opcode == Opcode.IF_EQ &&
-                                setOf(
-                                    comparison.registerA,
-                                    comparison.registerB,
-                                ) == setOf(nativeRegister, modelRegister)
-                        } ?: return@mapNotNull null
-
-                Triple(callIndex, modelIndex, comparisonIndex)
-            }
-
-        check(nativeToggleCandidates.size == 1) {
-            "Expected exactly one native/model toggle comparison; found ${nativeToggleCandidates.size}"
-        }
-
-        val (
-            nativeToggleStateCallIndex,
-            modelToggleStateIndex,
-            toggleComparisonIndex,
-        ) = nativeToggleCandidates.single()
-
-        check(
-            bindInstructions[
-                nativeToggleStateCallIndex + 1
-            ].opcode == Opcode.MOVE_RESULT
-        ) {
-            "Expected move-result after native toggle-state call"
-        }
-
-        val nativeToggleStateRegister =
-            (bindInstructions[
-                nativeToggleStateCallIndex + 1
-            ] as OneRegisterInstruction).registerA
-
-        val modelToggleStateRegister =
-            (bindInstructions[
-                modelToggleStateIndex
-            ] as TwoRegisterInstruction).registerA
-
-        val toggleComparison =
-            bindInstructions[
-                toggleComparisonIndex
-            ] as TwoRegisterInstruction
-
-        check(
-            setOf(
-                toggleComparison.registerA,
-                toggleComparison.registerB
-            ) == setOf(
-                nativeToggleStateRegister,
-                modelToggleStateRegister
-            )
-        ) {
-            "Expected native toggle state to be compared with model state"
-        }
-
-        val p0Register =
-            menuItemBindMethod.implementation!!.registerCount - 1
-
-        check(
-            p0Register <= 15 &&
-                nativeToggleStateRegister <= 15 &&
-                modelToggleStateRegister <= 15
-        ) {
-            "Menu toggle guard requires compact registers; update the injection to use a range invoke"
-        }
-
-        menuItemBindMethod.addInstructionsWithLabels(
-            toggleComparisonIndex,
-            """
-                invoke-static {p0, v$nativeToggleStateRegister, v$modelToggleStateRegister}, $EXTENSION_CLASS->guardNativeToggleMutation(Ljava/lang/Object;ZZ)Z
-                move-result v$nativeToggleStateRegister
-            """
-        )
-
-        /*
          * True pre-submit hook.
          *
          * Capture every Lhyi returned by bfrh.h(index), then reorder the
@@ -326,12 +405,10 @@ val pinPlaylistPatch = bytecodePatch(
             0,
             """
                 invoke-static/range {p0 .. p1}, $EXTENSION_CLASS->beginAdapterProxyRenderInfo(Ljava/lang/Object;I)V
-                invoke-static/range {p0 .. p1}, $EXTENSION_CLASS->remapAdapterProxySourcePosition(Ljava/lang/Object;I)I
-                move-result p1
             """
         )
 
-        val getItemCallIndex =
+        val getItemCall =
             renderInfoFactory.implementation!!.instructions
                 .withIndex()
                 .first { indexed ->
@@ -350,7 +427,15 @@ val pinPlaylistPatch = bytecodePatch(
                             .map { it.toString() } ==
                         listOf("I")
                 }
-                .index
+        val getItemCallIndex = getItemCall.index
+        val (sourceAdapterRegister, sourcePositionRegister) =
+            when (val instruction = getItemCall.value) {
+                is FiveRegisterInstruction ->
+                    instruction.registerC to instruction.registerD
+                is RegisterRangeInstruction ->
+                    instruction.startRegister to instruction.startRegister + 1
+                else -> error("Unsupported getItem invoke")
+            }
 
         val getItemResult =
             renderInfoFactory.implementation!!.instructions[
@@ -369,6 +454,15 @@ val pinPlaylistPatch = bytecodePatch(
             getItemCallIndex + 2,
             """
                 invoke-static/range {v${getItemResult.registerA} .. v${getItemResult.registerA}}, $EXTENSION_CLASS->captureAdapterProxySourceObject(Ljava/lang/Object;)V
+            """
+        )
+
+        renderInfoFactory.addInstructionsWithLabels(
+            getItemCallIndex,
+            """
+                invoke-static/range {v$sourceAdapterRegister .. v$sourceAdapterRegister}, $EXTENSION_CLASS->captureAdapterProxySourceAdapter(Ljava/lang/Object;)V
+                invoke-static/range {v$sourcePositionRegister .. v$sourcePositionRegister}, $EXTENSION_CLASS->remapActiveAdapterProxySourcePosition(I)I
+                move-result v$sourcePositionRegister
             """
         )
 
@@ -572,6 +666,206 @@ val pinPlaylistPatch = bytecodePatch(
         val libraryAdapterClass =
             PlaylistLithoAdapterBindFingerprint.classDef
 
+        val nativeLibraryControllerFields =
+            libraryAdapterClass.fields.filter { field ->
+                (field.accessFlags and 0x8) == 0 &&
+                    field.type.startsWith("L")
+            }
+
+        check(nativeLibraryControllerFields.size == 1) {
+            "Expected one Library adapter controller field, found " +
+                nativeLibraryControllerFields.map { field ->
+                    field.name to field.type
+                }
+        }
+
+        val nativeLibraryControllerType =
+            nativeLibraryControllerFields.single().type
+        fun isLibraryReplaceAll(method: com.android.tools.smali.dexlib2.iface.Method): Boolean {
+            val references = method.implementation?.instructions
+                ?.mapNotNull { instruction ->
+                    (instruction as? ReferenceInstruction)?.reference
+                }
+                .orEmpty()
+
+            return references.any { reference ->
+                reference is FieldReference &&
+                    reference.definingClass == nativeLibraryControllerType &&
+                    reference.type == "Ljava/util/List;"
+            } && references.any { reference ->
+                reference is MethodReference &&
+                    reference.definingClass == "Ljava/util/List;" &&
+                    reference.name == "clear"
+            } && references.any { reference ->
+                reference is MethodReference &&
+                    reference.definingClass == "Ljava/util/List;" &&
+                    reference.name == "iterator"
+            }
+        }
+
+        val libraryReplaceAllClass = mutableClassDefBy { classDef ->
+            classDef.methods.any(::isLibraryReplaceAll)
+        }
+        val libraryReplaceAllMethod =
+            libraryReplaceAllClass.methods.single(::isLibraryReplaceAll)
+        val sourceIteratorCall =
+            libraryReplaceAllMethod.implementation!!.instructions
+                .withIndex()
+                .single { indexed ->
+                    val reference =
+                        (indexed.value as? ReferenceInstruction)
+                            ?.reference as? MethodReference
+
+                    reference?.definingClass == "Ljava/util/List;" &&
+                        reference.name == "iterator" &&
+                        reference.parameterTypes.isEmpty()
+                }
+        val sourceRowsRegister =
+            when (val instruction = sourceIteratorCall.value) {
+                is FiveRegisterInstruction -> instruction.registerC
+                is RegisterRangeInstruction -> instruction.startRegister
+                else -> error("Unsupported List.iterator invoke")
+            }
+
+        check(
+            libraryReplaceAllMethod.implementation!!.instructions[
+                sourceIteratorCall.index + 1
+            ].opcode == Opcode.MOVE_RESULT_OBJECT
+        ) {
+            "Expected move-result-object after List.iterator"
+        }
+
+        libraryReplaceAllMethod.addInstructionsWithLabels(
+            sourceIteratorCall.index + 2,
+            """
+                invoke-static {p0, v$sourceRowsRegister}, $EXTENSION_CLASS->inspectNativeLibraryRows(Ljava/lang/Object;Ljava/lang/Object;)V
+            """,
+        )
+
+        val nativeLibraryControllerClass =
+            mutableClassDefBy(nativeLibraryControllerType)
+        val originalNativeBatchMutationMethod =
+            nativeLibraryControllerClass.methods.single { method ->
+                val references = method.implementation?.instructions
+                    ?.mapNotNull { instruction ->
+                        (instruction as? ReferenceInstruction)?.reference
+                    }
+                    .orEmpty()
+
+                method.returnType == "V" &&
+                    method.parameters.map { parameter -> parameter.type } ==
+                    listOf("I") &&
+                    references.any { reference ->
+                        reference is MethodReference &&
+                            reference.definingClass == "Ljava/util/Deque;" &&
+                            reference.name == "pollFirst"
+                    } && references.any { reference ->
+                        reference is MethodReference &&
+                            reference.definingClass == "Ljava/util/List;" &&
+                            reference.name == "add" &&
+                            reference.parameterTypes.map { it.toString() } ==
+                            listOf("I", "Ljava/lang/Object;")
+                    }
+            }
+
+        check((originalNativeBatchMutationMethod.accessFlags and 0x8) == 0) {
+            "Expected native Library batch mutation to be an instance method"
+        }
+
+        originalNativeBatchMutationMethod.addInstructionsWithLabels(
+            0,
+            """
+                invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->beginNativeLibraryMutation(Ljava/lang/Object;)V
+            """,
+        )
+
+        originalNativeBatchMutationMethod.implementation!!.instructions
+            .withIndex()
+            .filter { indexed ->
+                indexed.value.opcode == Opcode.RETURN_VOID
+            }
+            .map { indexed -> indexed.index }
+            .asReversed()
+            .forEach { returnIndex ->
+                originalNativeBatchMutationMethod.addInstructionsWithLabels(
+                    returnIndex,
+                    """
+                        invoke-static {}, $EXTENSION_CLASS->finishNativeLibraryMutation()V
+                    """,
+                )
+            }
+
+        fun isInlineLibraryTransaction(
+            method: com.android.tools.smali.dexlib2.iface.Method,
+        ): Boolean {
+            val references = method.implementation?.instructions
+                ?.mapNotNull { instruction ->
+                    (instruction as? ReferenceInstruction)?.reference
+                }
+                .orEmpty()
+
+            return references.any { reference ->
+                reference is FieldReference &&
+                    reference.definingClass == nativeLibraryControllerType &&
+                    reference.type == "Ljava/util/List;"
+            } && references.any { reference ->
+                reference is MethodReference &&
+                    reference.definingClass == "Landroid/util/SparseArray;" &&
+                    reference.name == "clear"
+            } && references.any { reference ->
+                reference is MethodReference &&
+                    reference.definingClass == "Ljava/util/List;" &&
+                    reference.name == "add" &&
+                    reference.parameterTypes.map { it.toString() } ==
+                    listOf("I", "Ljava/lang/Object;")
+            }
+        }
+
+        val inlineTransactionClass = mutableClassDefBy { classDef ->
+            classDef.methods.any(::isInlineLibraryTransaction)
+        }
+        val inlineTransactionMethod =
+            inlineTransactionClass.methods.single(::isInlineLibraryTransaction)
+
+        check((inlineTransactionMethod.accessFlags and 0x8) == 0) {
+            "Expected inline Library transaction to be an instance method"
+        }
+
+        inlineTransactionMethod.addInstructionsWithLabels(
+            0,
+            """
+                invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->beginNativeLibraryMutation(Ljava/lang/Object;)V
+            """,
+        )
+
+        inlineTransactionMethod.implementation!!.instructions
+            .withIndex()
+            .filter { indexed ->
+                indexed.value.opcode == Opcode.RETURN_VOID
+            }
+            .map { indexed -> indexed.index }
+            .asReversed()
+            .forEach { returnIndex ->
+                inlineTransactionMethod.addInstructionsWithLabels(
+                    returnIndex,
+                    """
+                        invoke-static {}, $EXTENSION_CLASS->finishNativeLibraryMutation()V
+                    """,
+                )
+            }
+
+        val libraryItemCountMethod =
+            libraryAdapterClass.methods.single {
+                it.returnType == "I" && it.parameters.isEmpty()
+            }
+
+        libraryItemCountMethod.addInstructionsWithLabels(
+            0,
+            """
+                invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->prepareStableLibraryAdapter(Ljava/lang/Object;)V
+            """
+        )
+
         val libraryViewTypeMethod =
             libraryAdapterClass.methods.single {
                 it.returnType == "I" &&
@@ -583,6 +877,7 @@ val pinPlaylistPatch = bytecodePatch(
         libraryViewTypeMethod.addInstructionsWithLabels(
             0,
             """
+                invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->preparePersistedLibraryAdapter(Ljava/lang/Object;)V
                 invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->beginAdapterViewTypePositionRemap(Ljava/lang/Object;)V
                 invoke-static/range {p1 .. p1}, $EXTENSION_CLASS->remapAdapterPosition(I)I
                 move-result p1
@@ -600,6 +895,7 @@ val pinPlaylistPatch = bytecodePatch(
         libraryStableIdMethod.addInstructionsWithLabels(
             0,
             """
+                invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->preparePersistedLibraryAdapter(Ljava/lang/Object;)V
                 invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->beginAdapterStableIdPositionRemap(Ljava/lang/Object;)V
                 invoke-static/range {p1 .. p1}, $EXTENSION_CLASS->remapAdapterPosition(I)I
                 move-result p1
@@ -617,6 +913,7 @@ val pinPlaylistPatch = bytecodePatch(
         libraryBindMethod.addInstructionsWithLabels(
             0,
             """
+                invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->preparePersistedLibraryAdapter(Ljava/lang/Object;)V
                 invoke-static {p0, p1, p2}, $EXTENSION_CLASS->beginBoundLibraryRow(Ljava/lang/Object;Ljava/lang/Object;I)V
                 invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->beginAdapterBindPositionRemap(Ljava/lang/Object;)V
                 invoke-static/range {p2 .. p2}, $EXTENSION_CLASS->remapAdapterPosition(I)I
@@ -643,59 +940,251 @@ val pinPlaylistPatch = bytecodePatch(
         }
 
         /*
-         * Lightweight row-key bridge. qot.k still receives the clicked overflow
-         * View and the byhm source object. Resolve qot.k directly from qot.j's
-         * matched class so no separate global fingerprint is required.
+         * Native post-normalization flyout insertion (verifier-safe).
+         *
+         * The native normalization call returns a mutable ArrayList containing only the
+         * native rows that survived YouTube Music's own normalization. Build a
+         * new row through the app's ordinary native row factory and append it
+         * only after that normalization call returns. The native page-menu
+         * pipeline then copies and binds the same object through MenuItemPresenter.
          */
-        val flyoutSourceMethod = PlaylistFlyoutSourceFingerprint.method
-        val flyoutSourceParameterTypes =
-            flyoutSourceMethod.parameters.map { parameter -> parameter.type }
-        val flyoutMenuType = flyoutSourceParameterTypes[0]
+        val originalFlyoutSourceMethod =
+            PlaylistFlyoutSourceFingerprint.method
+        val flyoutSourceClass =
+            PlaylistFlyoutSourceFingerprint.classDef
+        val nativeRowFactory =
+            PlaylistNativeMenuRowFactoryFingerprint.method
 
-        val flyoutViewCandidates =
-            PlaylistFlyoutSourceFingerprint.classDef.methods.filter {
-                it.returnType == "V" &&
-                    it.parameters.map { parameter -> parameter.type } ==
-                    listOf(
-                        flyoutSourceParameterTypes[0],
-                        "Landroid/view/View;",
-                        "Ljava/lang/Object;",
-                        flyoutSourceParameterTypes[3],
-                    )
-            }
-
-        check(flyoutViewCandidates.size == 1) {
-            "Expected one paired flyout View method for " +
-                flyoutSourceParameterTypes +
-                ", found " + flyoutViewCandidates.map { method ->
-                    method.name to method.parameters.map { parameter ->
-                        parameter.type
-                    }
-                }
+        check((nativeRowFactory.accessFlags and 0x8) != 0) {
+            "Expected the native menu-row factory to be static"
         }
 
-        val flyoutViewMethod = flyoutViewCandidates.single()
+        val nativeRowType = nativeRowFactory.returnType
+        val flyoutAcceptsNativeRowType =
+            flyoutSourceClass.methods.any { candidate ->
+                val appendsToList =
+                    candidate.implementation?.instructions?.any { instruction ->
+                        val reference =
+                            (instruction as? ReferenceInstruction)
+                                ?.reference as? MethodReference
 
-        flyoutViewMethod.addInstructionsWithLabels(
-            0,
-            """
-                invoke-static {p2, p3}, $EXTENSION_CLASS->captureFlyoutViewContext(Landroid/view/View;Ljava/lang/Object;)V
-            """
-        )
+                        reference?.definingClass == "Ljava/util/List;" &&
+                            reference.name == "add" &&
+                            reference.parameterTypes.map { it.toString() } ==
+                                listOf("Ljava/lang/Object;") &&
+                            reference.returnType == "Z"
+                    } == true
+
+                (candidate.accessFlags and 0x8) != 0 &&
+                    candidate.returnType == "V" &&
+                    candidate.parameters.map { parameter -> parameter.type } ==
+                        listOf(
+                            "Ljava/util/List;",
+                            nativeRowType,
+                        ) &&
+                    appendsToList
+            }
+
+        check(nativeRowType.startsWith("L") && flyoutAcceptsNativeRowType) {
+            "Native row factory result does not match the flyout row model"
+        }
+        val nativeTitleFactoryCall =
+            nativeRowFactory.implementation!!.instructions
+                .asSequence()
+                .mapNotNull { instruction ->
+                    val reference =
+                        (instruction as? ReferenceInstruction)
+                            ?.reference as? MethodReference
+                                ?: return@mapNotNull null
+
+                    instruction to reference
+                }
+                .single { (instruction, reference) ->
+                    (instruction.opcode == Opcode.INVOKE_STATIC ||
+                        instruction.opcode == Opcode.INVOKE_STATIC_RANGE) &&
+                        reference.parameterTypes
+                            .map { it.toString() } ==
+                            listOf("Ljava/lang/String;") &&
+                        reference.returnType.startsWith("L")
+                }
+
+        val nativeTitleFactoryReference =
+            nativeTitleFactoryCall.second
+
+        val nativeTitleFactoryDescriptor =
+            "${nativeTitleFactoryReference.definingClass}->" +
+                "${nativeTitleFactoryReference.name}(" +
+                nativeTitleFactoryReference.parameterTypes
+                    .joinToString(separator = "") +
+                ")${nativeTitleFactoryReference.returnType}"
+
+        val nativeRowFactoryDescriptor =
+            "${nativeRowFactory.definingClass}->" +
+                "${nativeRowFactory.name}(" +
+                nativeRowFactory.parameters
+                    .joinToString(separator = "") { parameter ->
+                        parameter.type
+                    } +
+                ")${nativeRowFactory.returnType}"
+
+        val flyoutMenuType =
+            originalFlyoutSourceMethod.parameters.first().type
+
+        val flyoutContextField =
+            originalFlyoutSourceMethod.implementation!!.instructions
+                .asSequence()
+                .filter { instruction ->
+                    instruction.opcode == Opcode.IGET_OBJECT
+                }
+                .mapNotNull { instruction ->
+                    (instruction as? ReferenceInstruction)
+                        ?.reference as? FieldReference
+                }
+                .first { field ->
+                    field.type == "Landroid/content/Context;"
+                }
+
+        val flyoutContextFieldDescriptor =
+            "${flyoutContextField.definingClass}->" +
+                "${flyoutContextField.name}:" +
+                flyoutContextField.type
+
+        val flyoutParameterRegisterCount =
+            1 + originalFlyoutSourceMethod.parameters.sumOf { parameter ->
+                if (parameter.type == "J" || parameter.type == "D") 2 else 1
+            }
+        val originalFlyoutRegisterCount =
+            originalFlyoutSourceMethod.implementation!!.registerCount
 
         /*
-         * Capture canonical identity from the reusable native menu, then pass
-         * a detached copy downstream when the optional row is injected. This
-         * keeps qot.j's original bwyr protobuf safe for later reopenings.
+         * cloneMutable keeps the original register file intact and shifts the
+         * real parameter registers upward. The original parameter slots become
+         * local mirrors used by the unchanged method body. Therefore, merely
+         * adding one register per parameter creates no free scratch registers.
+         *
+         * Allocate the parameter-mirror span plus three truly free registers.
+         * The free range begins at the old register count and is never referenced
+         * by the original implementation.
          */
-        flyoutSourceMethod.addInstructionsWithLabels(
-            0,
+        val flyoutScratchRegisterCount = 3
+        val flyoutAdditionalRegisterCount =
+            flyoutParameterRegisterCount + flyoutScratchRegisterCount
+
+        val patchedFlyoutSourceMethod =
+            originalFlyoutSourceMethod.cloneMutable(
+                additionalRegisters = flyoutAdditionalRegisterCount
+            )
+
+        flyoutSourceClass.methods.apply {
+            remove(originalFlyoutSourceMethod)
+            add(patchedFlyoutSourceMethod)
+        }
+
+        val contextOrListRegister = originalFlyoutRegisterCount
+        val playlistIdOrItemRegister = originalFlyoutRegisterCount + 1
+        val titleRegister = originalFlyoutRegisterCount + 2
+        val shiftedThisRegister =
+            originalFlyoutRegisterCount - flyoutParameterRegisterCount +
+                flyoutAdditionalRegisterCount
+
+        check(
+            (originalFlyoutSourceMethod.accessFlags and 0x8) == 0 &&
+                originalFlyoutSourceMethod.parameters.take(3).all { parameter ->
+                    parameter.type.startsWith("L") ||
+                        parameter.type.startsWith("[")
+                } &&
+                flyoutMenuType.startsWith("L") &&
+                flyoutMenuType.endsWith(";") &&
+                nativeRowFactory.returnType.startsWith("L") &&
+                nativeRowFactory.returnType.endsWith(";") &&
+                contextOrListRegister >= originalFlyoutRegisterCount &&
+                titleRegister < shiftedThisRegister &&
+                titleRegister <= 15 &&
+                shiftedThisRegister <= 15
+        ) {
+            "Flyout hook requires three verifier-safe scratch registers below v16"
+        }
+
+        val normalizationMoveResultIndex =
+            patchedFlyoutSourceMethod.implementation!!.instructions
+                .withIndex()
+                .first { indexed ->
+                    val reference =
+                        (indexed.value as? ReferenceInstruction)
+                            ?.reference as? MethodReference
+
+                    reference != null &&
+                        reference.returnType == "Ljava/util/List;" &&
+                        reference.parameterTypes
+                            .map { it.toString() } ==
+                            listOf(
+                                flyoutMenuType,
+                                "Ljava/lang/Object;",
+                            )
+                }
+                .index + 1
+
+        check(
+            patchedFlyoutSourceMethod.implementation!!
+                .instructions[normalizationMoveResultIndex]
+                .opcode == Opcode.MOVE_RESULT_OBJECT
+        ) {
+            "Expected move-result-object after native flyout normalization"
+        }
+
+        val normalizationResultRegister =
+            (patchedFlyoutSourceMethod.implementation!!
+                .instructions[normalizationMoveResultIndex]
+                as OneRegisterInstruction).registerA
+
+        val nativeNormalizationContinuation =
+            patchedFlyoutSourceMethod.implementation!!
+                .instructions[normalizationMoveResultIndex + 1]
+
+        /*
+         * Resolve flyout identity only after YouTube Music has returned its
+         * normalized row list. Nothing is carried across the native method's
+         * control-flow graph, and the three scratch registers are outside the
+         * original register file.
+         *
+         * Their lifetimes are deliberately linear:
+         *   scratch 0: Context -> normalized List
+         *   scratch 1: playlist ID -> native item
+         *   scratch 2: title String -> native title message
+         *
+         * Every call uses range encoding, and the original continuation never
+         * reads these scratch registers.
+         */
+        patchedFlyoutSourceMethod.addInstructionsWithLabels(
+            normalizationMoveResultIndex + 1,
             """
-                invoke-static {p1, p2, p3}, $EXTENSION_CLASS->captureFlyoutSource(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V
-                invoke-static {p1, p2}, $EXTENSION_CLASS->prepareFlyoutMenu(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
-                move-result-object p1
-                check-cast p1, $flyoutMenuType
-            """
+                invoke-static/range {p1 .. p3}, $EXTENSION_CLASS->captureFlyoutSource(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V
+
+                invoke-static {}, $EXTENSION_CLASS->getActiveFlyoutPlaylistIdForNativeRow()Ljava/lang/String;
+                move-result-object v$playlistIdOrItemRegister
+                if-eqz v$playlistIdOrItemRegister, :pin_playlist_no_native_row
+
+                iget-object v$contextOrListRegister, p0, $flyoutContextFieldDescriptor
+                invoke-static/range {v$contextOrListRegister .. v$contextOrListRegister}, $EXTENSION_CLASS->getActiveFlyoutMenuTitle(Landroid/content/Context;)Ljava/lang/String;
+                move-result-object v$titleRegister
+                if-eqz v$titleRegister, :pin_playlist_no_native_row
+
+                invoke-static/range {v$titleRegister .. v$titleRegister}, $nativeTitleFactoryDescriptor
+                move-result-object v$titleRegister
+                if-eqz v$titleRegister, :pin_playlist_no_native_row
+
+                invoke-static/range {v$contextOrListRegister .. v$playlistIdOrItemRegister}, $nativeRowFactoryDescriptor
+                move-result-object v$playlistIdOrItemRegister
+                if-eqz v$playlistIdOrItemRegister, :pin_playlist_no_native_row
+
+                move-object/from16 v$contextOrListRegister, v$normalizationResultRegister
+                invoke-static/range {v$contextOrListRegister .. v$titleRegister}, $EXTENSION_CLASS->insertNativePinMenuItem(Ljava/util/List;Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/List;
+                move-result-object v$normalizationResultRegister
+            """,
+            ExternalLabel(
+                "pin_playlist_no_native_row",
+                nativeNormalizationContinuation
+            )
         )
 
     }
