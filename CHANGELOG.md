@@ -1,3 +1,9 @@
+## [1.1.0-dev.9](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.8...v1.1.0-dev.9) (2026-07-16)
+
+### Bug Fixes
+
+* remove version-specific Pin playlists naming ([5e24191](https://github.com/Seobject/Seobject-patches/commit/5e241918ad88f8fc06689bb23aaa6e62d0e40a32))
+
 ## [1.1.0-dev.8](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.7...v1.1.0-dev.8) (2026-07-16)
 
 ### Bug Fixes
