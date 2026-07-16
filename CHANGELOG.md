@@ -1,3 +1,10 @@
+## [1.1.0-dev.10](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.9...v1.1.0-dev.10) (2026-07-16)
+
+### Bug Fixes
+
+* pin release Node version ([9756191](https://github.com/Seobject/Seobject-patches/commit/9756191b1b62cf2367eaf46c735a1815681eb74c))
+* simplify patch bundle labels ([0fe16e4](https://github.com/Seobject/Seobject-patches/commit/0fe16e45674f0a6a25800b7f1844ee901dca8529))
+
 ## [1.1.0-dev.9](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.8...v1.1.0-dev.9) (2026-07-16)
 
 ### Bug Fixes
