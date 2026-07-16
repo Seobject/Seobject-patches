@@ -1,3 +1,9 @@
+## [1.0.6](https://github.com/Seobject/Seobject-patches/compare/v1.0.5...v1.0.6) (2026-07-16)
+
+### Bug Fixes
+
+* unify Pin playlists and remove version-specific naming ([508b1f7](https://github.com/Seobject/Seobject-patches/commit/508b1f7dff5df0431a3c3ff9221906a3d78e198a))
+
 ## [1.0.5](https://github.com/Seobject/Seobject-patches/compare/v1.0.4...v1.0.5) (2026-07-14)
 
 ### Bug Fixes
