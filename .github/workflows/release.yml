@@ -45,11 +45,6 @@ jobs:
       - name: Install release dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Regenerate patch compatibility metadata
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew :patches:generatePatchesList -PnoProguard
-
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
