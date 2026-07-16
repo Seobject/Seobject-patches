@@ -1,3 +1,9 @@
+## [1.1.0-dev.8](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.7...v1.1.0-dev.8) (2026-07-16)
+
+### Bug Fixes
+
+* build release assets after versioning ([eed2d61](https://github.com/Seobject/Seobject-patches/commit/eed2d61cd425c030c8664c5a48620cd98a5e1298))
+
 ## [1.1.0-dev.7](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.6...v1.1.0-dev.7) (2026-07-16)
 
 ### Bug Fixes
