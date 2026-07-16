@@ -84,6 +84,81 @@ async function buildAndValidateBundle(
   return expectedFilename;
 }
 
+async function updateReadmeVersion(cwd, tag) {
+  const readmePath = join(cwd, "README.md");
+  const readme = await readFile(readmePath, "utf8");
+  const startMarker = "<!-- PATCHES_START -->";
+  const endMarker = "<!-- PATCHES_END -->";
+  const start = readme.indexOf(startMarker);
+  const end = readme.indexOf(endMarker);
+
+  if (start < 0 || end < 0 || end <= start) {
+    throw new Error(
+      "README patch-list markers are missing or out of order",
+    );
+  }
+
+  const normalizedReadme = readme.replace(/\r\n?/g, "\n");
+  const normalizedStart = normalizedReadme.indexOf(startMarker);
+  const normalizedEnd = normalizedReadme.indexOf(endMarker);
+
+  if (
+    normalizedStart < 0 ||
+    normalizedEnd < 0 ||
+    normalizedEnd <= normalizedStart
+  ) {
+    throw new Error(
+      "README patch-list markers are missing after newline normalization",
+    );
+  }
+
+  const before = normalizedReadme.slice(
+    0,
+    normalizedStart + startMarker.length,
+  );
+  const block = normalizedReadme.slice(
+    normalizedStart + startMarker.length,
+    normalizedEnd,
+  );
+  const after = normalizedReadme.slice(normalizedEnd);
+  const lines = block.split("\n");
+  const summaryIndexes = [];
+
+  lines.forEach((line, index) => {
+    if (
+      line.startsWith("> ") &&
+      /\d+ patch(?:es)? total$/.test(line)
+    ) {
+      summaryIndexes.push(index);
+    }
+  });
+
+  if (summaryIndexes.length !== 1) {
+    throw new Error(
+      `Expected exactly one README patch summary header; found ${summaryIndexes.length}`,
+    );
+  }
+
+  const summaryIndex = summaryIndexes[0];
+  const countMatch = lines[summaryIndex].match(
+    /(\d+ patch(?:es)? total)$/,
+  );
+
+  if (!countMatch) {
+    throw new Error("README patch count could not be read");
+  }
+
+  lines[summaryIndex] =
+    `> **[${tag}](https://github.com/${repository}/releases/tag/${tag})**` +
+    `&nbsp;&nbsp;&bull;&nbsp;&nbsp;${countMatch[1]}`;
+
+  await writeFile(
+    readmePath,
+    `${before}${lines.join("\n")}${after}`,
+    "utf8",
+  );
+}
+
 module.exports = {
   async prepare(
     _pluginConfig,
@@ -103,6 +178,7 @@ module.exports = {
       version,
       logger,
     );
+    await updateReadmeVersion(cwd, tag);
     const createdAt = new Date()
       .toISOString()
       .replace(/\.\d{3}Z$/, "");

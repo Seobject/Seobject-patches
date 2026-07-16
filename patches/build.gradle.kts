@@ -84,7 +84,7 @@ val buildPinPlaylistExtension = tasks.register<Exec>("buildPinPlaylistExtension"
 
 patches {
     about {
-        name = "Seobjects Random Patches (Dev)"
+        name = "Seobjects Random Patches"
         description = "Random QoL Patches — dev channel for experimental YouTube Music versions"
         source = "git@github.com:Seobject/Seobject-patches.git"
         author = "Seobject"

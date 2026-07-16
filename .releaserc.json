@@ -33,6 +33,7 @@
       {
         "assets": [
           "CHANGELOG.md",
+          "README.md",
           "gradle.properties",
           "patch-bundle.json",
           "patches-list.json",
