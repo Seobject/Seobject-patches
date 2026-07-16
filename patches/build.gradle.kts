@@ -18,7 +18,7 @@ val buildPinPlaylistJar = tasks.register<Jar>("buildPinPlaylistJar") {
     archiveFileName.set("pinplaylist.jar")
     destinationDirectory.set(pinPlaylistJarDirectory)
     from(pinPlaylistClasses) {
-        include("app/morphe/extension/music/patches/pinplaylist924/**")
+        include("app/morphe/extension/music/patches/pinplaylist/**")
     }
 }
 

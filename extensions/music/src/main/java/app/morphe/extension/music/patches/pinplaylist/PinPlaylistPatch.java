@@ -1,4 +1,4 @@
-package app.morphe.extension.music.patches.pinplaylist924;
+package app.morphe.extension.music.patches.pinplaylist;
 
 import android.content.Context;
 import android.graphics.Canvas;
@@ -36,7 +36,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
-public final class PinPlaylistPatch924 {
+public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
     private static final String BUILD_ID = "v124-single-player-setting";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
@@ -11676,6 +11676,6 @@ public final class PinPlaylistPatch924 {
         return null;
     }
 
-    private PinPlaylistPatch924() {
+    private PinPlaylistPatch() {
     }
 }

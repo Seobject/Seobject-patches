@@ -19,9 +19,9 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 private const val EXTENSION_CLASS =
-    "Lapp/morphe/extension/music/patches/pinplaylist924/PinPlaylistPatch924;"
+    "Lapp/morphe/extension/music/patches/pinplaylist/PinPlaylistPatch;"
 private const val SETTINGS_CLASS =
-    "Lapp/morphe/extension/music/patches/pinplaylist924/PinPlaylistSettings;"
+    "Lapp/morphe/extension/music/patches/pinplaylist/PinPlaylistSettings;"
 
 /**
  * Matches MenuItemPresenter.onClick(View).

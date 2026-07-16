@@ -1,4 +1,4 @@
-package app.morphe.extension.music.patches.pinplaylist924;
+package app.morphe.extension.music.patches.pinplaylist;
 
 import android.content.Context;
 import android.content.SharedPreferences;
