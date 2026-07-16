@@ -27,11 +27,29 @@ val buildPinPlaylistExtension = tasks.register<Exec>("buildPinPlaylistExtension"
     )
 
     doFirst {
-        val sdk = requireNotNull(System.getenv("LOCALAPPDATA")) {
-            "LOCALAPPDATA is required to locate the Android SDK"
-        }
-        val d8 = file("$sdk/Android/Sdk/build-tools/37.0.0/d8.bat")
-        check(d8.isFile) { "D8 not found: $d8" }
+        val sdkRoot = sequenceOf(
+            System.getenv("ANDROID_SDK_ROOT"),
+            System.getenv("ANDROID_HOME"),
+            System.getenv("LOCALAPPDATA")?.let { "$it/Android/Sdk" },
+        )
+            .filterNotNull()
+            .map { file(it) }
+            .firstOrNull { it.isDirectory }
+            ?: error("Android SDK not found")
+
+        val buildToolsDirectory = sdkRoot.resolve("build-tools")
+        val d8 = buildToolsDirectory.listFiles()
+            ?.asSequence()
+            ?.filter { it.isDirectory }
+            ?.sortedByDescending { it.name }
+            ?.flatMap { directory ->
+                sequenceOf(
+                    directory.resolve("d8"),
+                    directory.resolve("d8.bat"),
+                )
+            }
+            ?.firstOrNull { it.isFile }
+            ?: error("D8 not found under: $buildToolsDirectory")
 
         delete(pinPlaylistDexDirectory)
         pinPlaylistDexDirectory.get().asFile.mkdirs()
@@ -76,8 +94,6 @@ dependencies {
 
     implementation(libs.morphe.patches.library)
 
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-    testImplementation(files("C:/Users/Evan/AppData/Local/Temp/opencode/morphe-core-1.34.0.mpp"))
 
     // Android API stubs defined here.
     compileOnly(project(":patches:stub"))
@@ -86,30 +102,6 @@ dependencies {
 tasks {
     processResources {
         dependsOn(buildPinPlaylistExtension)
-    }
-
-    register<JavaExec>("runLocalApkPatchTest") {
-        dependsOn(jar)
-        classpath =
-            files("C:/Users/Evan/AppData/Local/Temp/opencode/morphe-core-1.34.0.mpp") +
-                files(layout.buildDirectory.file("libs/patches-${project.version}.mpp")) +
-                (sourceSets["test"].runtimeClasspath - sourceSets["main"].output)
-        mainClass.set("LocalApkPatchTestKt")
-        doFirst {
-            systemProperty(
-                "localTestApk",
-                providers.gradleProperty("localTestApk").get(),
-            )
-            systemProperty(
-                "localTestOutput",
-                providers.gradleProperty("localTestOutput").get(),
-            )
-            systemProperty(
-                "localTestVersion",
-                providers.gradleProperty("localTestVersion")
-                    .getOrElse("9.24.51"),
-            )
-        }
     }
 
     register<JavaExec>("checkStringResources") {
@@ -153,8 +145,4 @@ kotlin {
 
 tasks.named("sourcesJar") {
     dependsOn("buildPinPlaylistExtension")
-}
-
-tasks.withType<Test>().configureEach {
-    failOnNoDiscoveredTests.set(false)
 }
