@@ -12,7 +12,6 @@ configure<ApplicationExtension> {
     defaultConfig {
         minSdk = 26
     }
-
 }
 
 afterEvaluate {
@@ -28,4 +27,3 @@ afterEvaluate {
         )
     }
 }
-

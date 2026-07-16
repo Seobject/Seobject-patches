@@ -22,6 +22,16 @@ public final class PinStore {
     private static final String PREFS_NAME = "pin_mod_prefs";
     private static final String KEY_PINNED = "pinned_playlist_ids";
     private static final String KEY_PIN_ORDER = "pinned_playlist_order";
+    private static final String KEY_LIBRARY_PERMUTATION =
+            "library_permutation";
+    private static final String KEY_LIBRARY_PERMUTATION_PINS =
+            "library_permutation_pins";
+    private static final String KEY_LIBRARY_PERMUTATION_ROW_TYPE =
+            "library_permutation_row_type";
+    private static final String KEY_LIBRARY_PLAYLIST_SLOTS =
+            "library_playlist_slots";
+    private static final String KEY_LIBRARY_NATIVE_STABLE_IDS =
+            "library_native_stable_ids";
     private static final String KEY_FEATURE_STATE_INITIALIZED =
             "pin_feature_state_initialized";
     private static final String KEY_FEATURE_ENABLED_LAST_PROCESS =
@@ -103,7 +113,11 @@ public final class PinStore {
 
         if (clearPins) {
             editor.remove(KEY_PINNED)
-                    .remove(KEY_PIN_ORDER);
+                    .remove(KEY_PIN_ORDER)
+                    .remove(KEY_LIBRARY_PERMUTATION)
+                    .remove(KEY_LIBRARY_PERMUTATION_PINS)
+                    .remove(KEY_LIBRARY_PERMUTATION_ROW_TYPE)
+                    .remove(KEY_LIBRARY_PLAYLIST_SLOTS);
             cachedHasAnyPins = false;
         }
 
@@ -221,6 +235,10 @@ public final class PinStore {
         prefs(context).edit()
                 .putStringSet(KEY_PINNED, new HashSet<>(updated))
                 .putString(KEY_PIN_ORDER, serializeOrder(updated))
+                .remove(KEY_LIBRARY_PERMUTATION)
+                .remove(KEY_LIBRARY_PERMUTATION_PINS)
+                .remove(KEY_LIBRARY_PERMUTATION_ROW_TYPE)
+                .remove(KEY_LIBRARY_PLAYLIST_SLOTS)
                 .apply();
 
         cachedHasAnyPins = !updated.isEmpty();
@@ -241,9 +259,7 @@ public final class PinStore {
         SharedPreferences preferences = prefs(context);
         SharedPreferences.Editor editor = preferences.edit();
 
-        /* One visible row signature can belong to only one playlist. Remove
-         * stale collisions left by recycled holders before saving the exact
-         * ID captured from the active flyout. */
+        /* A visible row signature can identify only one playlist. */
         for (Map.Entry<String, ?> entry :
                 preferences.getAll().entrySet()) {
             String key = entry.getKey();
@@ -294,6 +310,169 @@ public final class PinStore {
         }
 
         return result;
+    }
+
+    public static void setLibraryPermutation(
+            Context context,
+            Set<String> pinOrder,
+            int[] permutation,
+            String rowType,
+            Iterable<Integer> playlistSlots,
+            Iterable<Long> nativeStableIds
+    ) {
+        if (context == null
+                || pinOrder == null
+                || permutation == null
+                || permutation.length == 0
+                || rowType == null
+                || rowType.isEmpty()
+                || playlistSlots == null
+                || nativeStableIds == null) {
+            return;
+        }
+
+        StringBuilder serialized = new StringBuilder();
+        for (int value : permutation) {
+            if (serialized.length() > 0) serialized.append(',');
+            serialized.append(value);
+        }
+
+        StringBuilder serializedSlots = new StringBuilder();
+        for (Integer value : playlistSlots) {
+            if (value == null || value < 0) continue;
+            if (serializedSlots.length() > 0) {
+                serializedSlots.append(',');
+            }
+            serializedSlots.append(value);
+        }
+
+        String serializedNativeStableIds =
+                serializeLongs(nativeStableIds);
+        if (serializedNativeStableIds.isEmpty()) return;
+
+        prefs(context).edit()
+                .putString(
+                        KEY_LIBRARY_PERMUTATION,
+                        serialized.toString()
+                )
+                .putString(
+                        KEY_LIBRARY_PERMUTATION_PINS,
+                        serializeOrder(pinOrder)
+                )
+                .putString(
+                        KEY_LIBRARY_PERMUTATION_ROW_TYPE,
+                        rowType
+                )
+                .putString(
+                        KEY_LIBRARY_PLAYLIST_SLOTS,
+                        serializedSlots.toString()
+                )
+                .putString(
+                        KEY_LIBRARY_NATIVE_STABLE_IDS,
+                        serializedNativeStableIds
+                )
+                .apply();
+    }
+
+    public static String getLibraryPermutationRowType(Context context) {
+        return context == null
+                ? ""
+                : prefs(context).getString(
+                KEY_LIBRARY_PERMUTATION_ROW_TYPE,
+                ""
+        );
+    }
+
+    public static int[] getLibraryPlaylistSlots(Context context) {
+        if (context == null) return null;
+
+        String serialized = prefs(context).getString(
+                KEY_LIBRARY_PLAYLIST_SLOTS,
+                ""
+        );
+        if (serialized == null || serialized.isEmpty()) return null;
+
+        String[] values = serialized.split(",", -1);
+        int[] result = new int[values.length];
+        try {
+            for (int index = 0; index < values.length; index++) {
+                result[index] = Integer.parseInt(values[index]);
+            }
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+        return result;
+    }
+
+    public static int[] getLibraryPermutation(
+            Context context,
+            Set<String> pinOrder,
+            int expectedSize,
+            Iterable<Long> nativeStableIds
+    ) {
+        if (context == null
+                || pinOrder == null
+                || expectedSize <= 0
+                || nativeStableIds == null) {
+            return null;
+        }
+
+        SharedPreferences preferences = prefs(context);
+        String currentNativeStableIds = serializeLongs(nativeStableIds);
+        if (currentNativeStableIds.isEmpty()
+                || !currentNativeStableIds.equals(
+                preferences.getString(
+                        KEY_LIBRARY_NATIVE_STABLE_IDS,
+                        ""
+                ))) {
+            return null;
+        }
+
+        if (!serializeOrder(pinOrder).equals(
+                preferences.getString(
+                        KEY_LIBRARY_PERMUTATION_PINS,
+                        ""
+                ))) {
+            return null;
+        }
+
+        String serialized = preferences.getString(
+                KEY_LIBRARY_PERMUTATION,
+                ""
+        );
+        if (serialized == null || serialized.isEmpty()) return null;
+
+        String[] values = serialized.split(",", -1);
+        if (values.length != expectedSize) return null;
+
+        int[] result = new int[expectedSize];
+        boolean[] seen = new boolean[expectedSize];
+        try {
+            for (int index = 0; index < values.length; index++) {
+                int value = Integer.parseInt(values[index]);
+                if (value < 0 || value >= expectedSize || seen[value]) {
+                    return null;
+                }
+                seen[value] = true;
+                result[index] = value;
+            }
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+
+        return result;
+    }
+
+    private static String serializeLongs(Iterable<Long> values) {
+        StringBuilder builder = new StringBuilder();
+
+        for (Long value : values) {
+            if (value == null) return "";
+            if (builder.length() > 0) builder.append(',');
+            builder.append(value);
+        }
+
+        return builder.toString();
     }
 
     /** Flips the pinned state for a playlist ID and returns the NEW state. */
