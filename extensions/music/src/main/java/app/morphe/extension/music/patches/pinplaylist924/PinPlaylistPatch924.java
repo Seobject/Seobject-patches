@@ -38,7 +38,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch924 {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v123-standalone-settings-materialization";
+    private static final String BUILD_ID = "v124-single-player-setting";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
             {"aqxr", "arad", "arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
@@ -1053,7 +1053,7 @@ public final class PinPlaylistPatch924 {
     @Nullable
     public static String getActiveFlyoutPlaylistIdForNativeRow() {
         if (!isFeatureEnabled()
-                || !isSeparateMenuItemEnabled()) {
+                || !isFeatureEnabled()) {
             return null;
         }
 
@@ -1111,7 +1111,7 @@ public final class PinPlaylistPatch924 {
             @Nullable Object nativeTitleMessage
     ) {
         if (!isFeatureEnabled()
-                || !isSeparateMenuItemEnabled()
+                || !isFeatureEnabled()
                 || convertedItems == null
                 || nativeSeedItem == null
                 || nativeTitleMessage == null) {
@@ -1390,7 +1390,7 @@ public final class PinPlaylistPatch924 {
             @Nullable Object sourceObject
     ) {
         if (!isFeatureEnabled()
-                || !isSeparateMenuItemEnabled()
+                || !isFeatureEnabled()
                 || flyoutMenu == null) {
             return flyoutMenu;
         }
@@ -3583,7 +3583,7 @@ public final class PinPlaylistPatch924 {
             @Nullable Object presenter
     ) {
         if (!isFeatureEnabled()
-                || !isSeparateMenuItemEnabled()
+                || !isFeatureEnabled()
                 || presenter == null) {
             return;
         }
@@ -3751,7 +3751,7 @@ public final class PinPlaylistPatch924 {
         boolean injectedMenuItem =
                 isInjectedLibraryPinMenuItem(menuItem);
         boolean separateMenuItem =
-                isSeparateMenuItemEnabled();
+                isFeatureEnabled();
 
         if (separateMenuItem && !injectedMenuItem) {
             return false;
@@ -4600,13 +4600,7 @@ public final class PinPlaylistPatch924 {
         }
     }
 
-    private static boolean isSeparateMenuItemEnabled() {
-        if (!isFeatureEnabled()) return false;
 
-        return PinPlaylistSettings.isSeparateMenuItemEnabled(
-                resolveApplicationContext()
-        );
-    }
 
 
 

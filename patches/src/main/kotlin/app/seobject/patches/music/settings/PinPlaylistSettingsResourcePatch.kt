@@ -20,7 +20,7 @@ private val emptyMorphePreferenceRoot = """
 /**
  * Ensures the XML roots consumed by Morphe's preference fragment exist.
  *
- * Player, Library, and the two switches are materialized at runtime by the
+ * Player and the single feature switch are materialized at runtime by the
  * extension after the preference XML has been inflated. Keeping this patch to
  * canonical root-file creation makes it independent of patch execution and
  * finalization order.

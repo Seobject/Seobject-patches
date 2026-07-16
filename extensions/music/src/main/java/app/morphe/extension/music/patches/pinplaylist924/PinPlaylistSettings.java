@@ -15,48 +15,39 @@ import java.util.List;
 /**
  * Standalone settings storage and UI materialization for Pin playlists.
  *
- * Values are stored in Android's default SharedPreferences, which is the same
- * store used by platform SwitchPreference. No Morphe Setting classes are used.
+ * The single feature switch is attached directly to Morphe's Player screen.
+ * Values use Android's default SharedPreferences; no Morphe Setting classes
+ * or Morphe patch implementation classes are required.
  */
 @SuppressWarnings("deprecation")
 public final class PinPlaylistSettings {
     public static final String KEY_ENABLED =
             "morphe_music_replace_pin_to_speed_dial";
-    public static final String KEY_SEPARATE_MENU_ITEM =
+
+    private static final String LEGACY_KEY_SEPARATE_MENU_ITEM =
             "morphe_music_pin_playlist_separate_menu_item";
+    private static final String LEGACY_LIBRARY_SCREEN_KEY =
+            "morphe_music_pin_playlists_library";
 
     private static final String PLAYER_SCREEN_KEY =
             "morphe_settings_music_screen_3_player";
     private static final String PLAYER_SCREEN_SORTED_KEY =
             PLAYER_SCREEN_KEY + "_sort_by_title";
-    private static final String LIBRARY_SCREEN_KEY =
-            "morphe_music_pin_playlists_library";
 
     private static final String PLAYER_TITLE = "Player";
-    private static final String LIBRARY_TITLE = "Library";
     private static final String ENABLED_TITLE = "Enable Pin playlists";
     private static final String ENABLED_SUMMARY =
             "Enable persistent Library playlist pinning and visible pin indicators";
-    private static final String SEPARATE_MENU_TITLE =
-            "Add Pin to Library button";
-    private static final String SEPARATE_MENU_SUMMARY =
-            "Show a separate Library pin action in playlist menus";
 
     private static final Object LOCK = new Object();
 
     private static volatile SharedPreferences preferences;
     private static volatile boolean enabled = true;
-    private static volatile boolean separateMenuItemEnabled = true;
 
     private static final SharedPreferences.OnSharedPreferenceChangeListener
             PREFERENCE_LISTENER = (sharedPreferences, key) -> {
         if (KEY_ENABLED.equals(key)) {
             enabled = sharedPreferences.getBoolean(KEY_ENABLED, true);
-        } else if (KEY_SEPARATE_MENU_ITEM.equals(key)) {
-            separateMenuItemEnabled = sharedPreferences.getBoolean(
-                    KEY_SEPARATE_MENU_ITEM,
-                    true
-            );
         }
     };
 
@@ -65,14 +56,10 @@ public final class PinPlaylistSettings {
         return enabled;
     }
 
-    public static boolean isSeparateMenuItemEnabled(Context context) {
-        initialize(context);
-        return separateMenuItemEnabled;
-    }
-
     /**
-     * Adds Morphe > Player > Library when a Morphe preference fragment is
-     * available. Existing screens and switches are reused and deduplicated.
+     * Ensures Morphe > Player exists and places the one Pin playlists switch
+     * directly inside it. Legacy Library screens and separate-menu switches
+     * from earlier builds are removed from the live preference tree.
      */
     public static void installPreferencePath(Object fragmentObject) {
         if (!(fragmentObject instanceof PreferenceFragment)) return;
@@ -85,34 +72,22 @@ public final class PinPlaylistSettings {
 
         initialize(context);
 
-        PreferenceScreen player = ensurePlayerScreen(fragment, root, context);
-        PreferenceScreen library = ensureLibraryScreen(fragment, player, context);
+        PreferenceScreen player =
+                ensurePlayerScreen(fragment, root, context);
 
-        SwitchPreference enabledPreference = ensureSwitch(
+        SwitchPreference enabledPreference = extractSwitch(
                 root,
-                library,
                 context,
                 KEY_ENABLED,
                 ENABLED_TITLE,
                 ENABLED_SUMMARY
         );
-        SwitchPreference separateMenuPreference = ensureSwitch(
-                root,
-                library,
-                context,
-                KEY_SEPARATE_MENU_ITEM,
-                SEPARATE_MENU_TITLE,
-                SEPARATE_MENU_SUMMARY
-        );
 
-        separateMenuPreference.setDependency(KEY_ENABLED);
+        removeExactPreferences(root, LEGACY_KEY_SEPARATE_MENU_ITEM);
+        removeLegacyLibraryScreens(player);
 
-        // Library intentionally has no sorting suffix. Re-add both switches in
-        // the required order after all existing duplicates have been removed.
-        library.removePreference(enabledPreference);
-        library.removePreference(separateMenuPreference);
-        library.addPreference(enabledPreference);
-        library.addPreference(separateMenuPreference);
+        player.removePreference(enabledPreference);
+        player.addPreference(enabledPreference);
     }
 
     private static void initialize(Context context) {
@@ -126,11 +101,17 @@ public final class PinPlaylistSettings {
 
             SharedPreferences loaded =
                     PreferenceManager.getDefaultSharedPreferences(safeContext);
+
             enabled = loaded.getBoolean(KEY_ENABLED, true);
-            separateMenuItemEnabled = loaded.getBoolean(
-                    KEY_SEPARATE_MENU_ITEM,
-                    true
-            );
+
+            // This option no longer exists. Remove its persisted value so old
+            // installations have the same one-setting state as clean installs.
+            if (loaded.contains(LEGACY_KEY_SEPARATE_MENU_ITEM)) {
+                loaded.edit()
+                        .remove(LEGACY_KEY_SEPARATE_MENU_ITEM)
+                        .apply();
+            }
+
             loaded.registerOnSharedPreferenceChangeListener(
                     PREFERENCE_LISTENER
             );
@@ -157,41 +138,19 @@ public final class PinPlaylistSettings {
             mergeDuplicateScreens(matches, player);
         }
 
-        if (player.getKey() == null
-                || !player.getKey().startsWith(PLAYER_SCREEN_KEY)) {
+        String key = player.getKey();
+        if (key == null
+                || (!PLAYER_SCREEN_KEY.equals(key)
+                && !key.startsWith(PLAYER_SCREEN_KEY + "_sort_by_"))) {
             player.setKey(PLAYER_SCREEN_SORTED_KEY);
         }
+
         player.setTitle(PLAYER_TITLE);
         return player;
     }
 
-    private static PreferenceScreen ensureLibraryScreen(
-            PreferenceFragment fragment,
-            PreferenceScreen player,
-            Context context
-    ) {
-        List<PreferenceLocation> matches = new ArrayList<>();
-        collectExactScreens(player, LIBRARY_SCREEN_KEY, matches);
-
-        PreferenceScreen library = chooseLargestScreen(matches);
-        if (library == null) {
-            library = fragment.getPreferenceManager()
-                    .createPreferenceScreen(context);
-            library.setKey(LIBRARY_SCREEN_KEY);
-            player.addPreference(library);
-        } else {
-            moveToParent(matches, library, player);
-            mergeDuplicateScreens(matches, library);
-        }
-
-        library.setKey(LIBRARY_SCREEN_KEY);
-        library.setTitle(LIBRARY_TITLE);
-        return library;
-    }
-
-    private static SwitchPreference ensureSwitch(
+    private static SwitchPreference extractSwitch(
             PreferenceScreen root,
-            PreferenceScreen library,
             Context context,
             String key,
             String title,
@@ -201,32 +160,21 @@ public final class PinPlaylistSettings {
         collectExactPreferences(root, key, matches);
 
         SwitchPreference result = null;
-        PreferenceLocation resultLocation = null;
 
         for (PreferenceLocation location : matches) {
-            if (location.preference instanceof SwitchPreference) {
+            if (result == null
+                    && location.preference instanceof SwitchPreference) {
                 result = (SwitchPreference) location.preference;
-                resultLocation = location;
-                break;
             }
         }
 
-        boolean attachedToLibrary =
-                resultLocation != null && resultLocation.parent == library;
+        // Detach every old copy before attaching exactly one to Player.
+        for (PreferenceLocation location : matches) {
+            location.parent.removePreference(location.preference);
+        }
 
         if (result == null) {
             result = new SwitchPreference(context);
-            result.setKey(key);
-        } else if (!attachedToLibrary) {
-            resultLocation.parent.removePreference(result);
-            library.addPreference(result);
-            attachedToLibrary = true;
-        }
-
-        for (PreferenceLocation location : matches) {
-            if (location.preference != result) {
-                location.parent.removePreference(location.preference);
-            }
         }
 
         result.setKey(key);
@@ -234,42 +182,79 @@ public final class PinPlaylistSettings {
         result.setSummary(summary);
         result.setPersistent(true);
         result.setDefaultValue(Boolean.TRUE);
+        return result;
+    }
 
-        if (!attachedToLibrary) {
-            library.addPreference(result);
+    private static void removeLegacyLibraryScreens(
+            PreferenceScreen player
+    ) {
+        List<Preference> legacyScreens = new ArrayList<>();
+
+        for (int index = 0;
+             index < player.getPreferenceCount();
+             index++) {
+            Preference preference = player.getPreference(index);
+
+            if (preference instanceof PreferenceScreen
+                    && LEGACY_LIBRARY_SCREEN_KEY.equals(
+                    preference.getKey()
+            )) {
+                legacyScreens.add(preference);
+            }
         }
 
-        return result;
+        for (Preference legacyScreen : legacyScreens) {
+            player.removePreference(legacyScreen);
+        }
+    }
+
+    private static void removeExactPreferences(
+            PreferenceGroup group,
+            String key
+    ) {
+        List<Preference> directMatches = new ArrayList<>();
+        List<PreferenceGroup> childGroups = new ArrayList<>();
+
+        for (int index = 0;
+             index < group.getPreferenceCount();
+             index++) {
+            Preference preference = group.getPreference(index);
+
+            if (key.equals(preference.getKey())) {
+                directMatches.add(preference);
+            }
+
+            if (preference instanceof PreferenceGroup) {
+                childGroups.add((PreferenceGroup) preference);
+            }
+        }
+
+        for (Preference match : directMatches) {
+            group.removePreference(match);
+        }
+
+        for (PreferenceGroup childGroup : childGroups) {
+            removeExactPreferences(childGroup, key);
+        }
     }
 
     private static void collectPlayerScreens(
             PreferenceGroup root,
             List<PreferenceLocation> result
     ) {
-        for (int index = 0; index < root.getPreferenceCount(); index++) {
+        for (int index = 0;
+             index < root.getPreferenceCount();
+             index++) {
             Preference preference = root.getPreference(index);
             String key = preference.getKey();
 
             if (preference instanceof PreferenceScreen
                     && key != null
                     && (PLAYER_SCREEN_KEY.equals(key)
-                    || key.startsWith(PLAYER_SCREEN_KEY + "_sort_by_"))) {
+                    || key.startsWith(
+                    PLAYER_SCREEN_KEY + "_sort_by_"
+            ))) {
                 result.add(new PreferenceLocation(root, preference));
-            }
-        }
-    }
-
-    private static void collectExactScreens(
-            PreferenceGroup parent,
-            String key,
-            List<PreferenceLocation> result
-    ) {
-        for (int index = 0; index < parent.getPreferenceCount(); index++) {
-            Preference preference = parent.getPreference(index);
-
-            if (preference instanceof PreferenceScreen
-                    && key.equals(preference.getKey())) {
-                result.add(new PreferenceLocation(parent, preference));
             }
         }
     }
@@ -279,7 +264,9 @@ public final class PinPlaylistSettings {
             String key,
             List<PreferenceLocation> result
     ) {
-        for (int index = 0; index < group.getPreferenceCount(); index++) {
+        for (int index = 0;
+             index < group.getPreferenceCount();
+             index++) {
             Preference preference = group.getPreference(index);
 
             if (key.equals(preference.getKey())) {
@@ -340,6 +327,7 @@ public final class PinPlaylistSettings {
 
             PreferenceScreen duplicate =
                     (PreferenceScreen) location.preference;
+
             mergePreferenceGroups(duplicate, target);
             location.parent.removePreference(duplicate);
         }
@@ -350,12 +338,16 @@ public final class PinPlaylistSettings {
             PreferenceGroup target
     ) {
         List<Preference> children = new ArrayList<>();
-        for (int index = 0; index < source.getPreferenceCount(); index++) {
+
+        for (int index = 0;
+             index < source.getPreferenceCount();
+             index++) {
             children.add(source.getPreference(index));
         }
 
         for (Preference child : children) {
             source.removePreference(child);
+
             String key = child.getKey();
             Preference existing = key == null
                     ? null
@@ -377,9 +369,14 @@ public final class PinPlaylistSettings {
             PreferenceGroup group,
             String key
     ) {
-        for (int index = 0; index < group.getPreferenceCount(); index++) {
+        for (int index = 0;
+             index < group.getPreferenceCount();
+             index++) {
             Preference preference = group.getPreference(index);
-            if (key.equals(preference.getKey())) return preference;
+
+            if (key.equals(preference.getKey())) {
+                return preference;
+            }
 
             if (preference instanceof PreferenceGroup) {
                 Preference nested = findExactPreference(
