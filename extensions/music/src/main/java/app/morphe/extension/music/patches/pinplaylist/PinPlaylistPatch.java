@@ -14,6 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -38,7 +39,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v124-single-player-setting";
+    private static final String BUILD_ID = "v126-reviewed-targeted-playback-background";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
             {"aqxr", "arad", "arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
@@ -8928,6 +8929,146 @@ public final class PinPlaylistPatch {
         return resolved;
     }
 
+    private static final int MAX_PLAYBACK_HIGHLIGHT_WATCHERS = 64;
+
+    private static final IdentityHashMap<View, PlaybackHighlightWatcher>
+            playbackHighlightWatchers = new IdentityHashMap<>();
+
+    /*
+     * The persistent playing-row shade is not selected/activated state.
+     * YouTube Music exposes a visible now_playing_indicator in the playing
+     * two-column row and applies the shade through one or more of that row's
+     * named background containers.
+     *
+     * One pre-draw listener per currently bound playlist holder removes those
+     * backgrounds after any late native playback update but before the frame is
+     * drawn. The listener is disposed as soon as the holder is rebound to a
+     * non-playlist row.
+     */
+    private static final class PlaybackHighlightWatcher
+            implements ViewTreeObserver.OnPreDrawListener,
+            View.OnAttachStateChangeListener {
+        final View rowView;
+        final ArrayList<View> nowPlayingIndicators =
+                new ArrayList<>();
+        final ArrayList<View> backgroundTargets =
+                new ArrayList<>();
+
+        @Nullable
+        ViewTreeObserver observedTree;
+
+        PlaybackHighlightWatcher(View rowView) {
+            this.rowView = rowView;
+            rowView.addOnAttachStateChangeListener(this);
+            refreshTargets();
+            attachToTreeObserver();
+        }
+
+        void update() {
+            refreshTargets();
+            attachToTreeObserver();
+            clearPlaybackBackgroundIfNeeded();
+        }
+
+        void refreshTargets() {
+            nowPlayingIndicators.clear();
+            backgroundTargets.clear();
+
+            collectPlaybackHighlightTargets(
+                    rowView,
+                    0,
+                    nowPlayingIndicators,
+                    backgroundTargets
+            );
+        }
+
+        void attachToTreeObserver() {
+            ViewTreeObserver tree = rowView.getViewTreeObserver();
+            if (!tree.isAlive() || tree == observedTree) {
+                return;
+            }
+
+            detachFromTreeObserver();
+            tree.addOnPreDrawListener(this);
+            observedTree = tree;
+        }
+
+        void detachFromTreeObserver() {
+            ViewTreeObserver tree = observedTree;
+            observedTree = null;
+
+            if (tree != null && tree.isAlive()) {
+                tree.removeOnPreDrawListener(this);
+            }
+        }
+
+        void dispose() {
+            detachFromTreeObserver();
+            rowView.removeOnAttachStateChangeListener(this);
+            nowPlayingIndicators.clear();
+            backgroundTargets.clear();
+        }
+
+        @Override
+        public boolean onPreDraw() {
+            clearPlaybackBackgroundIfNeeded();
+            return true;
+        }
+
+        @Override
+        public void onViewAttachedToWindow(View view) {
+            refreshTargets();
+            attachToTreeObserver();
+            clearPlaybackBackgroundIfNeeded();
+        }
+
+        @Override
+        public void onViewDetachedFromWindow(View view) {
+            detachFromTreeObserver();
+        }
+
+        private void clearPlaybackBackgroundIfNeeded() {
+            if (!isFeatureEnabled()) {
+                return;
+            }
+
+            if (nowPlayingIndicators.isEmpty()
+                    || backgroundTargets.isEmpty()) {
+                refreshTargets();
+            }
+
+            boolean playing = false;
+
+            for (View indicator : nowPlayingIndicators) {
+                if (indicator.getVisibility() == View.VISIBLE
+                        && indicator.getAlpha() > 0f
+                        && indicator.getWidth() > 0
+                        && indicator.getHeight() > 0) {
+                    playing = true;
+                    break;
+                }
+            }
+
+            if (!playing) {
+                return;
+            }
+
+            for (View target : backgroundTargets) {
+                /*
+                 * Do not touch foregrounds. They can contain independent
+                 * interaction or accessibility visuals. The captured shade is
+                 * a full-row background, so clearing named backgrounds is the
+                 * narrowest change supported by the diagnostic hierarchy.
+                 */
+                if (target.getBackground() != null) {
+                    target.setBackground(null);
+                    target.jumpDrawablesToCurrentState();
+                    target.invalidate();
+                }
+            }
+        }
+    }
+
     private static void suppressPlaylistPlaybackHighlight(
             @Nullable Object adapter,
             @Nullable View itemView,
@@ -8958,58 +9099,67 @@ public final class PinPlaylistPatch {
             );
         }
 
-        if (!playlistRow) {
-            return;
+        PlaybackHighlightWatcher watcherToDispose = null;
+        PlaybackHighlightWatcher watcher;
+
+        synchronized (playbackHighlightWatchers) {
+            watcher = playbackHighlightWatchers.get(itemView);
+
+            if (!playlistRow) {
+                if (watcher != null) {
+                    playbackHighlightWatchers.remove(itemView);
+                    watcherToDispose = watcher;
+                    watcher = null;
+                }
+            } else if (watcher == null) {
+                if (playbackHighlightWatchers.size()
+                        >= MAX_PLAYBACK_HIGHLIGHT_WATCHERS) {
+                    ArrayList<PlaybackHighlightWatcher> staleWatchers =
+                            new ArrayList<>(
+                                    playbackHighlightWatchers.values()
+                            );
+
+                    playbackHighlightWatchers.clear();
+
+                    for (PlaybackHighlightWatcher stale :
+                            staleWatchers) {
+                        stale.dispose();
+                    }
+                }
+
+                watcher = new PlaybackHighlightWatcher(itemView);
+                playbackHighlightWatchers.put(itemView, watcher);
+            }
         }
 
-        String boundRowText = collectRowText(itemView);
+        if (watcherToDispose != null) {
+            watcherToDispose.dispose();
+        }
 
-        clearPersistentPlaylistSelectionState(
-                itemView,
-                0
-        );
-
-        itemView.postDelayed(
-                () -> {
-                    if (!itemView.isAttachedToWindow()
-                            || !boundRowText.equals(
-                            collectRowText(itemView)
-                    )) {
-                        return;
-                    }
-
-                    clearPersistentPlaylistSelectionState(
-                            itemView,
-                            0
-                    );
-                },
-                48L
-        );
+        if (watcher != null) {
+            watcher.update();
+        }
     }
 
-    private static void clearPersistentPlaylistSelectionState(
+    private static void collectPlaybackHighlightTargets(
             @Nullable View view,
-            int depth
+            int depth,
+            List<View> indicators,
+            List<View> backgroundTargets
     ) {
         if (view == null || depth > 8) {
             return;
         }
 
-        boolean changed = false;
+        String resourceName = getViewResourceEntryName(view);
 
-        if (view.isSelected()) {
-            view.setSelected(false);
-            changed = true;
-        }
-
-        if (view.isActivated()) {
-            view.setActivated(false);
-            changed = true;
-        }
-
-        if (changed) {
-            view.jumpDrawablesToCurrentState();
-            view.invalidate();
+        if ("now_playing_indicator".equals(resourceName)) {
+            indicators.add(view);
+        } else if ("swipe_layout".equals(resourceName)
+                || "two_column_item_content_parent".equals(resourceName)
+                || "two_column_item_content".equals(resourceName)
+                || "two_column_item_highlight".equals(resourceName)) {
+            backgroundTargets.add(view);
         }
 
         if (!(view instanceof ViewGroup)) {
@@ -9017,22 +9167,37 @@ public final class PinPlaylistPatch {
         }
 
         ViewGroup group = (ViewGroup) view;
-        int childCount = Math.min(
-                group.getChildCount(),
-                30
-        );
+        int childCount = Math.min(group.getChildCount(), 30);
 
-        for (int index = 0;
-             index < childCount;
-             index++) {
-            clearPersistentPlaylistSelectionState(
+        for (int index = 0; index < childCount; index++) {
+            collectPlaybackHighlightTargets(
                     group.getChildAt(index),
-                    depth + 1
+                    depth + 1,
+                    indicators,
+                    backgroundTargets
             );
         }
     }
 
+    @Nullable
+    private static String getViewResourceEntryName(
+            @Nullable View view
+    ) {
+        if (view == null || view.getId() == View.NO_ID) {
+            return null;
+        }
+
+        try {
+            return view.getResources().getResourceEntryName(
+                    view.getId()
+            );
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private static void captureBoundLibraryRow(
+
             Object adapter,
             Object holder,
             int scheduledPosition,
