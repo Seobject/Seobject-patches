@@ -24,8 +24,6 @@ Random QoL patches.
 
 <!-- PATCHES_END -->
 
-## Universal ReVanced Manager
-
 Import one of these manifests into your preferred manager:
 
 - [Stable channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/seobjects-random-patches-stable.json)
