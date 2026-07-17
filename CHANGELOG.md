@@ -1,3 +1,9 @@
+## [1.1.0-dev.14](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.13...v1.1.0-dev.14) (2026-07-17)
+
+### Bug Fixes
+
+* suppress playback background without pins ([e60295b](https://github.com/Seobject/Seobject-patches/commit/e60295b8a62d9fb9e1e4fc372635720b89eb41e1))
+
 ## [1.1.0-dev.13](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.12...v1.1.0-dev.13) (2026-07-17)
 
 ### Bug Fixes
