@@ -1,3 +1,9 @@
+## [1.1.0-dev.12](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.11...v1.1.0-dev.12) (2026-07-17)
+
+### Bug Fixes
+
+* suppress Library playlist playback highlight ([52b00ee](https://github.com/Seobject/Seobject-patches/commit/52b00eeb6043f73e511bb127136096a01a8acd24))
+
 ## [1.1.0-dev.11](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.10...v1.1.0-dev.11) (2026-07-17)
 
 ### Bug Fixes
