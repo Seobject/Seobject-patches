@@ -8837,38 +8837,199 @@ public final class PinPlaylistPatch {
             @Nullable Object holderOrView
     ) {
         if (holderOrView == null
-                || !isFeatureEnabled()
-                || !hasAnyPinsFast()) {
+                || !isFeatureEnabled()) {
             return;
         }
 
-        PendingBoundRow pending;
+        PendingBoundRow pending = null;
         synchronized (pendingBoundRows) {
             pending = pendingBoundRows.remove(holderOrView);
-            if (pending == null) return;
 
-            pendingBoundRows.remove(pending.holder);
-            pendingBoundRows.remove(pending.itemView);
+            if (pending != null) {
+                pendingBoundRows.remove(pending.holder);
+                pendingBoundRows.remove(pending.itemView);
+            }
         }
 
-        rememberVisibleBoundRow(
-                pending.adapter,
-                pending.position,
-                pending.itemView
+        View itemView = pending != null
+                ? pending.itemView
+                : resolveBoundItemView(holderOrView);
+
+        if (pending != null && hasAnyPinsFast()) {
+            rememberVisibleBoundRow(
+                    pending.adapter,
+                    pending.position,
+                    pending.itemView
+            );
+
+            applyBoundRowPinIndicator(
+                    pending.adapter,
+                    pending.itemView,
+                    pending.position
+            );
+
+            captureBoundLibraryRow(
+                    pending.adapter,
+                    pending.holder,
+                    pending.position,
+                    pending.stableId
+            );
+        }
+
+        suppressPlaylistPlaybackHighlight(
+                pending == null ? null : pending.adapter,
+                itemView,
+                pending == null ? -1 : pending.position
+        );
+    }
+
+    @Nullable
+    private static View resolveBoundItemView(
+            @Nullable Object holderOrView
+    ) {
+        if (holderOrView instanceof View) {
+            return (View) holderOrView;
+        }
+
+        if (holderOrView == null) {
+            return null;
+        }
+
+        View resolved = null;
+
+        for (Field field :
+                getInstanceFields(holderOrView.getClass())) {
+            if (!View.class.isAssignableFrom(field.getType())) {
+                continue;
+            }
+
+            Object value;
+
+            try {
+                field.setAccessible(true);
+                value = field.get(holderOrView);
+            } catch (Throwable ignored) {
+                continue;
+            }
+
+            if (!(value instanceof View)) {
+                continue;
+            }
+
+            View candidate = (View) value;
+
+            if (resolved == null) {
+                resolved = candidate;
+            } else if (resolved != candidate) {
+                return null;
+            }
+        }
+
+        return resolved;
+    }
+
+    private static void suppressPlaylistPlaybackHighlight(
+            @Nullable Object adapter,
+            @Nullable View itemView,
+            int visualPosition
+    ) {
+        if (itemView == null) {
+            return;
+        }
+
+        boolean playlistRow = false;
+
+        if (adapter != null && visualPosition >= 0) {
+            synchronized (adapterVisualPlaylistIds) {
+                Map<Integer, String> playlistIds =
+                        adapterVisualPlaylistIds.get(adapter);
+
+                if (playlistIds != null) {
+                    playlistRow = isPersistentPlaylistId(
+                            playlistIds.get(visualPosition)
+                    );
+                }
+            }
+        }
+
+        if (!playlistRow) {
+            playlistRow = isOrdinaryPlaylistRow(
+                    collectRowTextValues(itemView)
+            );
+        }
+
+        if (!playlistRow) {
+            return;
+        }
+
+        String boundRowText = collectRowText(itemView);
+
+        clearPersistentPlaylistSelectionState(
+                itemView,
+                0
         );
 
-        applyBoundRowPinIndicator(
-                pending.adapter,
-                pending.itemView,
-                pending.position
+        itemView.postDelayed(
+                () -> {
+                    if (!itemView.isAttachedToWindow()
+                            || !boundRowText.equals(
+                            collectRowText(itemView)
+                    )) {
+                        return;
+                    }
+
+                    clearPersistentPlaylistSelectionState(
+                            itemView,
+                            0
+                    );
+                },
+                48L
+        );
+    }
+
+    private static void clearPersistentPlaylistSelectionState(
+            @Nullable View view,
+            int depth
+    ) {
+        if (view == null || depth > 8) {
+            return;
+        }
+
+        boolean changed = false;
+
+        if (view.isSelected()) {
+            view.setSelected(false);
+            changed = true;
+        }
+
+        if (view.isActivated()) {
+            view.setActivated(false);
+            changed = true;
+        }
+
+        if (changed) {
+            view.jumpDrawablesToCurrentState();
+            view.invalidate();
+        }
+
+        if (!(view instanceof ViewGroup)) {
+            return;
+        }
+
+        ViewGroup group = (ViewGroup) view;
+        int childCount = Math.min(
+                group.getChildCount(),
+                30
         );
 
-        captureBoundLibraryRow(
-                pending.adapter,
-                pending.holder,
-                pending.position,
-                pending.stableId
-        );
+        for (int index = 0;
+             index < childCount;
+             index++) {
+            clearPersistentPlaylistSelectionState(
+                    group.getChildAt(index),
+                    depth + 1
+            );
+        }
     }
 
     private static void captureBoundLibraryRow(
