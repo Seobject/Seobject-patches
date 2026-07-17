@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-07-17T02:32:04",
-  "description": "## [1.1.0-dev.12](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.11...v1.1.0-dev.12) (2026-07-17)\n\n### Bug Fixes\n\n* suppress Library playlist playback highlight ([52b00ee](https://github.com/Seobject/Seobject-patches/commit/52b00eeb6043f73e511bb127136096a01a8acd24))",
-  "download_url": "https://github.com/Seobject/Seobject-patches/releases/download/v1.1.0-dev.12/patches-1.1.0-dev.12.mpp",
+  "created_at": "2026-07-17T04:13:57Z",
+  "description": "## [1.1.0-dev.13](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.12...v1.1.0-dev.13) (2026-07-17)\n\n### Bug Fixes\n\n* suppress Library playlist playback background ([8a0ac1f](https://github.com/Seobject/Seobject-patches/commit/8a0ac1f954e082e1b78ff59444920367192c029f))",
+  "download_url": "https://github.com/Seobject/Seobject-patches/releases/download/v1.1.0-dev.13/patches-1.1.0-dev.13.mpp",
   "signature_download_url": "N/A",
-  "version": "v1.1.0-dev.12"
+  "version": "v1.1.0-dev.13"
 }
