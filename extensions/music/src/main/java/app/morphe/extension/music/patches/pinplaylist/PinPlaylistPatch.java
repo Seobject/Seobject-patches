@@ -39,7 +39,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v126-reviewed-targeted-playback-background";
+    private static final String BUILD_ID = "v127-zero-pin-playback-background";
     private static final String[] MENU_ITEM_HELPER_CLASSES =
             {"aqxr", "arad", "arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
@@ -412,19 +412,22 @@ public final class PinPlaylistPatch {
         final int position;
         final long stableId;
         final View itemView;
+        final boolean pinMetadataReady;
 
         PendingBoundRow(
                 Object adapter,
                 Object holder,
                 int position,
                 long stableId,
-                View itemView
+                View itemView,
+                boolean pinMetadataReady
         ) {
             this.adapter = adapter;
             this.holder = holder;
             this.position = position;
             this.stableId = stableId;
             this.itemView = itemView;
+            this.pinMetadataReady = pinMetadataReady;
         }
     }
 
@@ -8778,47 +8781,69 @@ public final class PinPlaylistPatch {
                     + " holderType=" + objectTypeName(holder));
         }
 
-        if (!isConfirmedLibraryAdapterInstance(adapter)
-                || holder == null) {
+        if (holder == null || !isFeatureEnabled()) {
             return;
         }
 
-        if (!isFeatureEnabled()
-                || !hasAnyPinsFast()) {
-            return;
-        }
-
-        if (isAdapterBindCaptureSuppressed(adapter)) {
-            return;
-        }
-
-        List<?> items = getLibraryAdapterBackingList(adapter);
-        if (items == null
-                || !hasActiveAdapterPositionMap(
-                adapter,
-                items.size()
-        )) {
-            return;
-        }
-
-        if (position < 0 || position >= items.size()) return;
-
-        int sourcePosition = mappedSourcePosition(adapter, position);
-        if (sourcePosition < 0 || sourcePosition >= items.size()) return;
-
-        Object item = items.get(sourcePosition);
-        Object stableIdObject = readFieldByName(item, "b");
-        if (!(stableIdObject instanceof Number)) return;
-
+        /*
+         * Playback-background suppression needs only the bound row View. Capture
+         * it for every invocation of the already-installed bind hook, even when
+         * no playlists are pinned and no reorder position map exists.
+         */
         Object itemViewObject = readFieldByName(holder, "a");
-        if (!(itemViewObject instanceof View)) return;
+        View itemView = itemViewObject instanceof View
+                ? (View) itemViewObject
+                : resolveBoundItemView(holder);
+
+        if (itemView == null) {
+            return;
+        }
+
+        long stableId = 0L;
+        boolean pinMetadataReady = false;
+
+        /*
+         * Pin indicators, stable-ID learning, and reorder bookkeeping retain
+         * their original strict gates. They run only for a confirmed Library
+         * adapter with pins and a completed visual-to-source position map.
+         */
+        if (isConfirmedLibraryAdapterInstance(adapter)
+                && hasAnyPinsFast()
+                && !isAdapterBindCaptureSuppressed(adapter)) {
+            List<?> items = getLibraryAdapterBackingList(adapter);
+
+            if (items != null
+                    && hasActiveAdapterPositionMap(
+                    adapter,
+                    items.size()
+            )
+                    && position >= 0
+                    && position < items.size()) {
+                int sourcePosition =
+                        mappedSourcePosition(adapter, position);
+
+                if (sourcePosition >= 0
+                        && sourcePosition < items.size()) {
+                    Object item = items.get(sourcePosition);
+                    Object stableIdObject =
+                            readFieldByName(item, "b");
+
+                    if (stableIdObject instanceof Number) {
+                        stableId =
+                                ((Number) stableIdObject).longValue();
+                        pinMetadataReady = true;
+                    }
+                }
+            }
+        }
 
         PendingBoundRow pending = new PendingBoundRow(
                 adapter,
                 holder,
                 position,
-                ((Number) stableIdObject).longValue(),
-                (View) itemViewObject
+                stableId,
+                itemView,
+                pinMetadataReady
         );
 
         synchronized (pendingBoundRows) {
@@ -8831,7 +8856,6 @@ public final class PinPlaylistPatch {
                 pendingBoundRows.put(pending.itemView, pending);
             }
         }
-
     }
 
     public static void finishBoundLibraryRow(
@@ -8856,7 +8880,9 @@ public final class PinPlaylistPatch {
                 ? pending.itemView
                 : resolveBoundItemView(holderOrView);
 
-        if (pending != null && hasAnyPinsFast()) {
+        if (pending != null
+                && pending.pinMetadataReady
+                && hasAnyPinsFast()) {
             rememberVisibleBoundRow(
                     pending.adapter,
                     pending.position,
