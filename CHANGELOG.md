@@ -1,3 +1,9 @@
+## [1.1.0-dev.11](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.10...v1.1.0-dev.11) (2026-07-17)
+
+### Bug Fixes
+
+* simplify bundle description ([91e93c7](https://github.com/Seobject/Seobject-patches/commit/91e93c719993aef1c9f549cefd049e8dd25697c7))
+
 ## [1.1.0-dev.10](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.9...v1.1.0-dev.10) (2026-07-16)
 
 ### Bug Fixes
