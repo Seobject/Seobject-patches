@@ -1,3 +1,9 @@
+## [1.1.0-dev.15](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.14...v1.1.0-dev.15) (2026-07-21)
+
+### Bug Fixes
+
+* scope Pin playlists menus and playback highlight ([582f662](https://github.com/Seobject/Seobject-patches/commit/582f662d403754ceac7dd70d7eb4e9c877da8486))
+
 ## [1.1.0-dev.14](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.13...v1.1.0-dev.14) (2026-07-17)
 
 ### Bug Fixes

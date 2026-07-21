@@ -5,7 +5,7 @@ Random QoL patches
 ## 🩹 Patches list
 
 <!-- PATCHES_START -->
-> **[v1.1.0-dev.14](https://github.com/Seobject/Seobject-patches/releases/tag/v1.1.0-dev.14)**&nbsp;&nbsp;&bull;&nbsp;&nbsp;1 patch total
+> **[v1.1.0-dev.15](https://github.com/Seobject/Seobject-patches/releases/tag/v1.1.0-dev.15)**&nbsp;&nbsp;&bull;&nbsp;&nbsp;1 patch total
 
 <details>
 <summary>📦 YouTube Music&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
