@@ -39,19 +39,28 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v127-zero-pin-playback-background";
+    private static final String BUILD_ID = "v130-scoped-menu-playback-release";
+    /*
+     * Newest symbols are first for the normal fast path. The exact 9.28.51
+     * classes were verified from its decompiled APK:
+     *   arfx: native menu-item accessors
+     *   btke: native icon enum
+     *   bctx: native text-message factory
+     *   hzl: Library Litho RecyclerView adapter
+     *   jx/fs: adapter move/full-refresh notifications
+     */
     private static final String[] MENU_ITEM_HELPER_CLASSES =
-            {"aqxr", "arad", "arbe", "aqft"};
+            {"arfx", "aqxr", "arad", "arbe", "aqft"};
     private static final String[] ICON_ENUM_CLASSES =
-            {"bsts", "btcw", "brfz"};
+            {"btke", "bsts", "btcw", "brfz"};
     private static final String[] TEXT_HELPER_CLASSES =
-            {"bcjc", "bcow", "bbjy"};
+            {"bctx", "bcjc", "bcow", "bbjy"};
     private static final String[] LIBRARY_ADAPTER_CLASSES =
-            {"hxs", "hyz", "hvx"};
+            {"hzl", "hxs", "hyz", "hvx"};
     private static final String[] ADAPTER_MOVE_NOTIFY_METHODS =
-            {"iF", "jv", "js"};
+            {"jx", "iF", "jv", "js"};
     private static final String[] ADAPTER_FULL_NOTIFY_METHODS =
-            {"eB", "fq", "fo", "fj"};
+            {"fs", "eB", "fq", "fo", "fj"};
     private static final String MENU_TITLE_PIN =
             "Pin playlist to Library";
     private static final String MENU_TITLE_UNPIN =
@@ -80,6 +89,22 @@ public final class PinPlaylistPatch {
     private static final Pattern PLAYLIST_ID_PATTERN = Pattern.compile(
             "(OLAK5uy_[A-Za-z0-9_-]{8,}|PL[A-Za-z0-9_-]{30,}|LRSR[A-Za-z0-9_-]{8,})"
     );
+
+    /*
+     * Track overflow menus can expose the enclosing playlist ID in several
+     * commands. A playlist-ID consensus alone therefore cannot prove that the
+     * menu itself targets a playlist. YouTube video IDs retain a stable
+     * 11-character shape across app versions, so repeated IDs provide a
+     * symbol-free negative classifier for media-item menus.
+     */
+    private static final Pattern VIDEO_ID_CANDIDATE_PATTERN =
+            Pattern.compile(
+                    "(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])"
+            );
+    private static final int MAX_MEDIA_TARGET_DEPTH = 6;
+    private static final int MAX_MEDIA_TARGET_OBJECTS = 320;
+    private static final int MAX_MEDIA_TARGET_IDS = 12;
+    private static final int MAX_MEDIA_TARGET_MENU_ITEMS = 8;
 
     private static final IdentityHashMap<Object, String> flyoutObjectIds =
             new IdentityHashMap<>();
@@ -286,6 +311,7 @@ public final class PinPlaylistPatch {
             new IdentityHashMap<>();
 
     private static int rowPinIndicatorLogCount;
+    private static int libraryPinIndicatorMetadataLogCount;
     private static int flyoutMenuIconLogCount;
     private static int flyoutMenuCandidateLogCount;
 
@@ -655,6 +681,347 @@ public final class PinPlaylistPatch {
         return null;
     }
 
+    private static boolean isLikelyVideoIdCandidate(
+            @Nullable String candidate
+    ) {
+        if (candidate == null || candidate.length() != 11) {
+            return false;
+        }
+
+        boolean hasUpper = false;
+        boolean hasLower = false;
+        boolean hasDigitOrSymbol = false;
+
+        for (int index = 0; index < candidate.length(); index++) {
+            char character = candidate.charAt(index);
+
+            if (character >= 'A' && character <= 'Z') {
+                hasUpper = true;
+            } else if (character >= 'a' && character <= 'z') {
+                hasLower = true;
+            } else if ((character >= '0' && character <= '9')
+                    || character == '_'
+                    || character == '-') {
+                hasDigitOrSymbol = true;
+            } else {
+                return false;
+            }
+        }
+
+        /*
+         * Reject ordinary all-lowercase/all-uppercase eleven-character words.
+         * Real video IDs normally contain mixed case, a number, underscore, or
+         * hyphen. Missing an unusual ID is safer than hiding a playlist menu.
+         */
+        return hasDigitOrSymbol || (hasUpper && hasLower);
+    }
+
+    private static void addLikelyVideoIds(
+            @Nullable String value,
+            Set<String> output
+    ) {
+        if (value == null || output.size() >= MAX_MEDIA_TARGET_IDS) {
+            return;
+        }
+
+        Matcher matcher =
+                VIDEO_ID_CANDIDATE_PATTERN.matcher(value);
+
+        while (matcher.find()
+                && output.size() < MAX_MEDIA_TARGET_IDS) {
+            String candidate = matcher.group(1);
+
+            if (isLikelyVideoIdCandidate(candidate)) {
+                output.add(candidate);
+            }
+        }
+    }
+
+    private static void addLikelyVideoIds(
+            @Nullable byte[] bytes,
+            Set<String> output
+    ) {
+        if (bytes == null
+                || bytes.length == 0
+                || output.size() >= MAX_MEDIA_TARGET_IDS) {
+            return;
+        }
+
+        int start = -1;
+
+        for (int index = 0; index <= bytes.length; index++) {
+            boolean printable =
+                    index < bytes.length
+                            && bytes[index] >= 0x20
+                            && bytes[index] <= 0x7e;
+
+            if (printable) {
+                if (start < 0) start = index;
+                continue;
+            }
+
+            if (start >= 0) {
+                int length = index - start;
+
+                if (length >= 11 && length <= 160) {
+                    try {
+                        addLikelyVideoIds(
+                                new String(
+                                        bytes,
+                                        start,
+                                        length,
+                                        java.nio.charset.StandardCharsets.UTF_8
+                                ),
+                                output
+                        );
+                    } catch (Throwable ignored) {
+                    }
+                }
+
+                start = -1;
+            }
+
+            if (output.size() >= MAX_MEDIA_TARGET_IDS) {
+                return;
+            }
+        }
+    }
+
+    private static void collectLikelyVideoIdsRecursive(
+            @Nullable Object value,
+            Set<String> output,
+            IdentityHashMap<Object, Boolean> visited,
+            int[] visitedCount,
+            int depth
+    ) {
+        if (value == null
+                || depth > MAX_MEDIA_TARGET_DEPTH
+                || visitedCount[0] >= MAX_MEDIA_TARGET_OBJECTS
+                || output.size() >= MAX_MEDIA_TARGET_IDS) {
+            return;
+        }
+
+        if (value instanceof CharSequence) {
+            addLikelyVideoIds(value.toString(), output);
+            return;
+        }
+
+        byte[] bytes = extractByteContainer(value);
+
+        if (bytes != null) {
+            addLikelyVideoIds(bytes, output);
+
+            if (value instanceof byte[]
+                    || isByteContainer(value.getClass())) {
+                return;
+            }
+        }
+
+        Class<?> type = value.getClass();
+
+        if (type.isPrimitive() || isTerminalType(type)) {
+            return;
+        }
+
+        if (visited.put(value, Boolean.TRUE) != null) {
+            return;
+        }
+
+        visitedCount[0]++;
+
+        if (type.isArray()) {
+            int count = Math.min(Array.getLength(value), 24);
+
+            for (int index = 0; index < count; index++) {
+                collectLikelyVideoIdsRecursive(
+                        Array.get(value, index),
+                        output,
+                        visited,
+                        visitedCount,
+                        depth + 1
+                );
+
+                if (output.size() >= MAX_MEDIA_TARGET_IDS) return;
+            }
+
+            return;
+        }
+
+        if (value instanceof Iterable) {
+            int count = 0;
+
+            for (Object child : (Iterable<?>) value) {
+                collectLikelyVideoIdsRecursive(
+                        child,
+                        output,
+                        visited,
+                        visitedCount,
+                        depth + 1
+                );
+
+                if (output.size() >= MAX_MEDIA_TARGET_IDS
+                        || ++count >= 24) {
+                    return;
+                }
+            }
+
+            return;
+        }
+
+        if (value instanceof Map) {
+            int count = 0;
+
+            for (Map.Entry<?, ?> entry :
+                    ((Map<?, ?>) value).entrySet()) {
+                collectLikelyVideoIdsRecursive(
+                        entry.getKey(),
+                        output,
+                        visited,
+                        visitedCount,
+                        depth + 1
+                );
+                collectLikelyVideoIdsRecursive(
+                        entry.getValue(),
+                        output,
+                        visited,
+                        visitedCount,
+                        depth + 1
+                );
+
+                if (output.size() >= MAX_MEDIA_TARGET_IDS
+                        || ++count >= 24) {
+                    return;
+                }
+            }
+
+            return;
+        }
+
+        for (Field field : getInstanceFields(type)) {
+            if (field.getType().isPrimitive()) continue;
+
+            try {
+                field.setAccessible(true);
+                collectLikelyVideoIdsRecursive(
+                        field.get(value),
+                        output,
+                        visited,
+                        visitedCount,
+                        depth + 1
+                );
+            } catch (Throwable ignored) {
+            }
+
+            if (output.size() >= MAX_MEDIA_TARGET_IDS
+                    || visitedCount[0] >= MAX_MEDIA_TARGET_OBJECTS) {
+                return;
+            }
+        }
+    }
+
+    private static Set<String> collectLikelyVideoIds(
+            @Nullable Object value
+    ) {
+        Set<String> output = new LinkedHashSet<>();
+
+        collectLikelyVideoIdsRecursive(
+                value,
+                output,
+                new IdentityHashMap<Object, Boolean>(),
+                new int[]{0},
+                0
+        );
+
+        return output;
+    }
+
+    @Nullable
+    private static String resolveMediaItemTargetVideoId(
+            @Nullable Object flyoutMenu,
+            @Nullable Object sourceObject
+    ) {
+        Object listObject = readFieldByName(flyoutMenu, "c");
+
+        if (!(listObject instanceof List)) {
+            return null;
+        }
+
+        Set<String> sourceIds =
+                collectLikelyVideoIds(sourceObject);
+        Map<String, Integer> itemCounts =
+                new LinkedHashMap<>();
+
+        int scannedItems = 0;
+
+        for (Object menuItem : (List<?>) listObject) {
+            if (menuItem == null) continue;
+            if (scannedItems >= MAX_MEDIA_TARGET_MENU_ITEMS) break;
+
+            scannedItems++;
+
+            for (String videoId :
+                    collectLikelyVideoIds(menuItem)) {
+                Integer previous = itemCounts.get(videoId);
+
+                itemCounts.put(
+                        videoId,
+                        previous == null ? 1 : previous + 1
+                );
+            }
+        }
+
+        String bestId = null;
+        int bestEvidence = 0;
+        int secondBestEvidence = 0;
+        boolean tied = false;
+
+        for (Map.Entry<String, Integer> entry :
+                itemCounts.entrySet()) {
+            String candidate = entry.getKey();
+            int menuEvidence = entry.getValue() == null
+                    ? 0
+                    : entry.getValue();
+            int evidence = menuEvidence;
+
+            /*
+             * Require the same candidate in at least two distinct native menu
+             * rows. Source-model evidence is diagnostic only; this conservative
+             * boundary avoids hiding a real playlist menu because its source
+             * happens to retain the currently playing video's ID.
+             */
+            if (menuEvidence < 2) {
+                continue;
+            }
+
+            if (evidence > bestEvidence) {
+                secondBestEvidence = bestEvidence;
+                bestEvidence = evidence;
+                bestId = candidate;
+                tied = false;
+            } else if (evidence == bestEvidence) {
+                tied = true;
+            } else if (evidence > secondBestEvidence) {
+                secondBestEvidence = evidence;
+            }
+        }
+
+        if (bestId == null
+                || tied
+                || bestEvidence <= secondBestEvidence) {
+            return null;
+        }
+
+        Log.d(TAG, "FlyoutMediaTargetConsensus"
+                + " videoId=" + bestId
+                + " evidence=" + bestEvidence
+                + " sourceMatched="
+                + sourceIds.contains(bestId)
+                + " scannedItems=" + scannedItems
+                + " itemCounts=" + itemCounts);
+
+        return bestId;
+    }
+
     @Nullable
     private static String resolveNativeSpeedDialPlaylistId(
             @Nullable Object flyoutMenu
@@ -895,6 +1262,42 @@ public final class PinPlaylistPatch {
         activeFlyoutHasSpeedDial =
                 sourceObject != null
                         && sourceObject.getClass() != Object.class;
+
+        /*
+         * A track menu opened inside a playlist can legitimately contain the
+         * enclosing playlist ID in several actions. Reject a positively
+         * identified media-item target before consulting source caches or
+         * accepting playlist-ID consensus.
+         */
+        String mediaItemVideoId =
+                resolveMediaItemTargetVideoId(
+                        flyoutMenu,
+                        sourceObject
+                );
+
+        if (mediaItemVideoId != null) {
+            pendingFlyoutViewPlaylistId = null;
+            pendingFlyoutViewCapturedAtMs = 0L;
+            clearActiveFlyoutRowContext();
+
+            if (sourceObject != null) {
+                synchronized (flyoutSourcePlaylistIds) {
+                    flyoutSourcePlaylistIds.remove(sourceObject);
+                }
+            }
+
+            Log.d(TAG, "FlyoutTargetClassification"
+                    + " accepted=false"
+                    + " reason=mediaItemTarget"
+                    + " videoId=" + mediaItemVideoId
+                    + " sourceType="
+                    + objectTypeName(sourceObject)
+                    + " menuType="
+                    + objectTypeName(flyoutMenu)
+                    + " presenterType="
+                    + objectTypeName(flyoutPresenter));
+            return;
+        }
 
         if (!flyoutSourceEntryLogged) {
             flyoutSourceEntryLogged = true;
@@ -1264,15 +1667,30 @@ public final class PinPlaylistPatch {
                             finalItem
                     );
 
-            if (expectedTitle == null
-                    || renderedTitle == null
-                    || !expectedTitle.equals(
-                    renderedTitle.toString()
-            )) {
+            /*
+             * The helper class name is obfuscated and changes between releases.
+             * Keep the helper as the fast path, but do not discard a correctly
+             * constructed native row merely because that helper was renamed.
+             * The extension-owned English title is embedded directly in the new
+             * protobuf, so an exact bounded graph check is a safe fallback.
+             */
+            boolean nativeTitleMatches =
+                    expectedTitle != null
+                            && ((renderedTitle != null
+                            && expectedTitle.equals(
+                            renderedTitle.toString()
+                    )) || objectGraphContainsText(
+                            finalItem,
+                            expectedTitle,
+                            true
+                    ));
+
+            if (!nativeTitleMatches) {
                 Log.d(TAG, "NativeFactoryPinRow skipped=true"
                         + " reason=nativeTitleValidationFailed"
                         + " expected=" + expectedTitle
                         + " actual=" + renderedTitle
+                        + " graphFallback=false"
                         + " itemType="
                         + objectTypeName(finalItem));
                 return convertedItems;
@@ -7157,13 +7575,16 @@ public final class PinPlaylistPatch {
             );
         }
 
-        Log.d(TAG, "LibraryPinIndicatorMetadata"
-                + " adapterIdentity="
-                + identityString(visualAdapter)
-                + " playlistRows="
-                + visualPlaylistIds.size()
-                + " pinnedPositions="
-                + pinnedVisualPositions);
+        if (libraryPinIndicatorMetadataLogCount < 12) {
+            libraryPinIndicatorMetadataLogCount++;
+            Log.d(TAG, "LibraryPinIndicatorMetadata"
+                    + " adapterIdentity="
+                    + identityString(visualAdapter)
+                    + " playlistRows="
+                    + visualPlaylistIds.size()
+                    + " pinnedPositions="
+                    + pinnedVisualPositions);
+        }
     }
 
     private static void applyBoundRowPinIndicator(
@@ -9043,9 +9464,14 @@ public final class PinPlaylistPatch {
 
         @Override
         public void onViewAttachedToWindow(View view) {
+            /*
+             * Do not clear immediately on attachment. A recycled holder can
+             * still expose its previous playlist text until the new bind
+             * finishes, which allowed a stale watcher to erase a song row's
+             * native playing background.
+             */
             refreshTargets();
             attachToTreeObserver();
-            clearPlaybackBackgroundIfNeeded();
         }
 
         @Override
@@ -9055,6 +9481,18 @@ public final class PinPlaylistPatch {
 
         private void clearPlaybackBackgroundIfNeeded() {
             if (!isFeatureEnabled()) {
+                return;
+            }
+
+            /*
+             * Revalidate the current presentation on every frame. RecyclerView
+             * can retain this watcher while reusing the View for a song row.
+             * The existing playlist-row classifier is deliberately reused so
+             * no app-version symbols or new renderer assumptions are added.
+             */
+            if (!isOrdinaryPlaylistRow(
+                    collectRowTextValues(rowView)
+            )) {
                 return;
             }
 
