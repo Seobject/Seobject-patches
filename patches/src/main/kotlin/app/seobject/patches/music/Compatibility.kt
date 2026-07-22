@@ -16,7 +16,12 @@ internal object Compatibility {
             // Android 7+
             "a2a1ad7ba7f41dfca4514e2afeb90691719af6d0fdbed4b09bbf0ed897701ceb"
         ),
-        targets = listOf(
+        targets = listOf(
+            AppTarget(
+                version = "9.28.51",
+                minSdk = 26,
+                isExperimental = true,
+            ),
             AppTarget(
                 version = "9.26.51",
                 minSdk = 26,

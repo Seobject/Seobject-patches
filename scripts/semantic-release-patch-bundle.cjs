@@ -7,6 +7,9 @@ const {
 } = require("node:fs/promises");
 const { join } = require("node:path");
 
+const {
+  updateReadmeCompatibility,
+} = require("./readme-compatibility.cjs");
 const repository = "Seobject/Seobject-patches";
 
 function isExecutableMpp(filename) {
@@ -179,6 +182,7 @@ module.exports = {
       logger,
     );
     await updateReadmeVersion(cwd, tag);
+    await updateReadmeCompatibility(cwd, branch.name);
     const createdAt = new Date()
       .toISOString()
       .replace(/\.\d{3}Z$/, "");
