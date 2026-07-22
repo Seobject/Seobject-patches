@@ -25,6 +25,7 @@
         "preset": "conventionalcommits"
       }
     ],
+    "./scripts/semantic-release-compatibility-notes.cjs",
     "@semantic-release/changelog",
     "gradle-semantic-release-plugin",
     "./scripts/semantic-release-patch-bundle.cjs",
