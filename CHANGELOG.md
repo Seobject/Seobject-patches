@@ -1,3 +1,9 @@
+## [1.1.0-dev.17](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.16...v1.1.0-dev.17) (2026-07-22)
+
+### Bug Fixes
+
+* automate compatibility support release notes ([3859777](https://github.com/Seobject/Seobject-patches/commit/3859777ee780879f640d1b3d9dc9b7849b2e26ca))
+
 ## [1.1.0-dev.16](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.15...v1.1.0-dev.16) (2026-07-22)
 
 ### Features

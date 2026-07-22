@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-07-22T00:29:23",
-  "description": "## [1.1.0-dev.16](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.15...v1.1.0-dev.16) (2026-07-22)\n\n### Bug Fixes\n\n* automate YouTube Music compatibility documentation ([ea1ccd4](https://github.com/Seobject/Seobject-patches/commit/ea1ccd465e90515f64880529f4df49f60970e810))\n* repair compatibility README automation ([83b813a](https://github.com/Seobject/Seobject-patches/commit/83b813a7f57e0a183a87e68295ed2c28875bd02a))\n* simplify compatibility README automation ([9c24322](https://github.com/Seobject/Seobject-patches/commit/9c24322f3d590894ff370ce3ba1ea9eb913e1dae))",
-  "download_url": "https://github.com/Seobject/Seobject-patches/releases/download/v1.1.0-dev.16/patches-1.1.0-dev.16.mpp",
+  "created_at": "2026-07-22T00:39:50",
+  "description": "## [1.1.0-dev.17](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.16...v1.1.0-dev.17) (2026-07-22)\n\n### Bug Fixes\n\n* automate compatibility support release notes ([3859777](https://github.com/Seobject/Seobject-patches/commit/3859777ee780879f640d1b3d9dc9b7849b2e26ca))",
+  "download_url": "https://github.com/Seobject/Seobject-patches/releases/download/v1.1.0-dev.17/patches-1.1.0-dev.17.mpp",
   "signature_download_url": "N/A",
-  "version": "v1.1.0-dev.16"
+  "version": "v1.1.0-dev.17"
 }
