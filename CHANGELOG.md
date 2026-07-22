@@ -1,3 +1,11 @@
+## [1.1.0-dev.16](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.15...v1.1.0-dev.16) (2026-07-22)
+
+### Bug Fixes
+
+* automate YouTube Music compatibility documentation ([ea1ccd4](https://github.com/Seobject/Seobject-patches/commit/ea1ccd465e90515f64880529f4df49f60970e810))
+* repair compatibility README automation ([83b813a](https://github.com/Seobject/Seobject-patches/commit/83b813a7f57e0a183a87e68295ed2c28875bd02a))
+* simplify compatibility README automation ([9c24322](https://github.com/Seobject/Seobject-patches/commit/9c24322f3d590894ff370ce3ba1ea9eb913e1dae))
+
 ## [1.1.0-dev.15](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.14...v1.1.0-dev.15) (2026-07-21)
 
 ### Bug Fixes
