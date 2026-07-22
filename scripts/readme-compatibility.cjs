@@ -19,7 +19,10 @@ const compatibilityRelativePath = join(
 function compareVersionParts(left, right) {
   const leftParts = left.split(".").map(Number);
   const rightParts = right.split(".").map(Number);
-  const length = Math.max(leftParts.length, rightParts.length);
+  const length = Math.max(
+    leftParts.length,
+    rightParts.length,
+  );
 
   for (let index = 0; index < length; index += 1) {
     const leftPart = leftParts[index] || 0;
@@ -56,21 +59,6 @@ function readSupportedVersions(compatibilitySource) {
   }
 
   return uniqueVersions;
-}
-
-function formatVersionSentence(versions) {
-  if (versions.length === 1) {
-    return versions[0];
-  }
-
-  if (versions.length === 2) {
-    return `${versions[0]} and ${versions[1]}`;
-  }
-
-  return (
-    `${versions.slice(0, -1).join(", ")}, and ` +
-    versions[versions.length - 1]
-  );
 }
 
 function replaceSupportedVersionTable(readme, versions) {
@@ -117,35 +105,23 @@ function replaceSupportedVersionTable(readme, versions) {
   return `${before}${updatedBlock}${after}`;
 }
 
-function replaceDevChannelSentence(readme, versions) {
+function removeLegacyChannelSentence(readme) {
   const pattern =
-    /^The stable `main` channel supports YouTube Music (.+?)\. This `dev` channel provides experimental support for .+$/m;
-  const matches = [...readme.matchAll(
-    new RegExp(pattern.source, "gm"),
-  )];
+    /^The stable (?:`main`|main) channel supports YouTube Music .+?\. This (?:`dev`|dev) channel provides experimental support for .+\.\n*/m;
 
-  if (matches.length !== 1) {
-    throw new Error(
-      "Expected exactly one dev-channel compatibility sentence; " +
-      `found ${matches.length}`,
-    );
-  }
-
-  const stableVersion = matches[0][1];
-  const supported = formatVersionSentence(versions);
-
-  return readme.replace(
-    pattern,
-    "The stable `main` channel supports YouTube Music " +
-      `${stableVersion}. This \`dev\` channel provides ` +
-      `experimental support for ${supported}.`,
-  );
+  return readme.replace(pattern, "");
 }
 
 async function updateReadmeCompatibility(
   cwd,
   branchName,
 ) {
+  if (branchName !== "dev" && branchName !== "main") {
+    throw new Error(
+      `Unsupported semantic-release branch: ${branchName}`,
+    );
+  }
+
   const compatibilityPath = join(
     cwd,
     compatibilityRelativePath,
@@ -169,17 +145,7 @@ async function updateReadmeCompatibility(
     readme,
     versions,
   );
-
-  if (branchName === "dev") {
-    readme = replaceDevChannelSentence(
-      readme,
-      versions,
-    );
-  } else if (branchName !== "main") {
-    throw new Error(
-      `Unsupported semantic-release branch: ${branchName}`,
-    );
-  }
+  readme = removeLegacyChannelSentence(readme);
 
   await writeFile(readmePath, readme, "utf8");
   return versions;
@@ -187,9 +153,9 @@ async function updateReadmeCompatibility(
 
 module.exports = {
   compareVersionParts,
-  formatVersionSentence,
   readSupportedVersions,
   replaceSupportedVersionTable,
+  removeLegacyChannelSentence,
   updateReadmeCompatibility,
 };
 
