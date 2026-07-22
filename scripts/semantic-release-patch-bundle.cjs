@@ -183,7 +183,7 @@ module.exports = {
     );
     await updateReadmeVersion(cwd, tag);
     await updateReadmeCompatibility(cwd, branch.name);
-    const createdAt = new Date()
+const createdAt = new Date()
       .toISOString()
       .replace(/\.\d{3}Z$/, "");
 

@@ -85,15 +85,17 @@ function replaceSupportedVersionTable(readme, versions) {
     );
   }
 
-  const before = readme.slice(0, start + startMarker.length);
+  const before = readme.slice(
+    0,
+    start + startMarker.length,
+  );
   const block = readme.slice(
     start + startMarker.length,
     end,
   );
   const after = readme.slice(end);
-
   const tablePattern =
-    /(\*\*ðŸŽ¯ Supported versions:\*\*\n\n)\|[^\n]+\|\n\|[^\n]+\|/g;
+    /(\*\*[^\n]*Supported versions:\*\*\n\n)\|[^\n]+\|\n\|[^\n]+\|/g;
   const matches = [...block.matchAll(tablePattern)];
 
   if (matches.length !== 1) {
@@ -107,7 +109,6 @@ function replaceSupportedVersionTable(readme, versions) {
     `| ${versions.join(" | ")} |`;
   const alignment =
     `| ${versions.map(() => ":---:").join(" | ")} |`;
-
   const updatedBlock = block.replace(
     tablePattern,
     `$1${header}\n${alignment}`,

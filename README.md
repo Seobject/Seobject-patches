@@ -13,8 +13,8 @@ Random QoL patches
 
 **🎯 Supported versions:**
 
-| 9.24.51 | 9.25.50 | 9.26.51 |
-| :---: | :---: | :---: |
+| 9.24.51 | 9.25.50 | 9.26.51 | 9.28.51 |
+| :---: | :---: | :---: | :---: |
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |---|---|---|
@@ -30,7 +30,7 @@ Import one of these permanent manifests into your preferred manager:
 - [Development channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/dev/seobjects-random-patches-dev.json)
 - [Newest release from either channel](https://raw.githubusercontent.com/Seobject/Seobject-patches/main/seobjects-random-patches.json)
 
-The stable `main` channel supports YouTube Music 9.15.51. This `dev` channel provides experimental support for 9.24.51, 9.25.50, 9.26.51, and 9.28.51.
+The stable main channel supports YouTube Music 9.15.51. This dev channel provides experimental support for 9.24.51, 9.25.50, 9.26.51, and 9.28.51.
 
 ## 📜 License
 
