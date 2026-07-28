@@ -24,6 +24,10 @@ if ($ApplyAndVerify -and $SimulateRename) {
     throw "-ApplyAndVerify cannot be combined with -SimulateRename."
 }
 
+if ($PromoteBaseline -and ($ApplyAndVerify -or $SimulateRename)) {
+    throw "-PromoteBaseline must be run separately after manual runtime testing."
+}
+
 $arguments = [System.Collections.Generic.List[string]]::new()
 $arguments.Add($detector)
 

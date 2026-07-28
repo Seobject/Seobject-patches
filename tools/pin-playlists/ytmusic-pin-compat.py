@@ -1687,6 +1687,7 @@ def bootstrap_baseline(
     version: str,
     decompiled: Path,
     state_root: Path,
+    fallback_baseline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_path = repo / PIN_SOURCE_RELATIVE
     arrays = load_patch_arrays(source_path)
@@ -1753,6 +1754,22 @@ def bootstrap_baseline(
                 break
 
         if selected is None or selected_symbol is None:
+            fallback_role = None
+            fallback_version = None
+            if fallback_baseline is not None:
+                fallback_version = fallback_baseline.get("version")
+                fallback_role = fallback_baseline.get("roles", {}).get(role)
+
+            if role in OPTIONAL_ROLES and fallback_role is not None:
+                inherited_role = dict(fallback_role)
+                inherited_role["inherited_from_version"] = fallback_role.get(
+                    "inherited_from_version",
+                    fallback_version,
+                )
+                inherited_role["unresolved_in_version"] = version
+                roles[role] = inherited_role
+                continue
+
             available = sorted(
                 {
                     method.name
@@ -2513,6 +2530,7 @@ def promote_baseline(
     state_root: Path,
 ) -> dict[str, Any]:
     previous = baseline_path(state_root)
+    previous_payload = load_baseline(state_root)
     if previous.exists():
         archive_dir = state_root / "baseline-history"
         archive_dir.mkdir(parents=True, exist_ok=True)
@@ -2526,6 +2544,7 @@ def promote_baseline(
         version=version,
         decompiled=decompiled,
         state_root=state_root,
+        fallback_baseline=previous_payload,
     )
 
 
@@ -2622,6 +2641,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "--apply or --verify."
         )
 
+    if args.promote_baseline and (
+        args.bootstrap or args.apply or args.verify or args.simulate_rename
+    ):
+        raise CompatibilityError(
+            "--promote-baseline must be run separately after manual "
+            "runtime testing."
+        )
+
     state_root = args.state_root.expanduser().resolve()
     state_root.mkdir(parents=True, exist_ok=True)
     jadx_root = args.jadx_root.expanduser().resolve()
@@ -2648,6 +2675,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("Mode:         " + (
         "simulated rename discovery"
         if args.simulate_rename
+        else "promote baseline" if args.promote_baseline
         else "apply + verify" if args.apply and args.verify
         else "apply" if args.apply
         else "read-only"
@@ -2720,6 +2748,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
 
+    if args.promote_baseline:
+        pending = [
+            resolution
+            for resolution in resolutions
+            if resolution.status == "discovered"
+        ]
+        if pending:
+            labels = ", ".join(
+                ROLE_LABELS[resolution.role]
+                for resolution in pending
+            )
+            raise CompatibilityError(
+                "Cannot promote the baseline while discovered symbols are "
+                f"still unapplied: {labels}. Run --apply --verify first, "
+                "runtime-test that APK, and then promote it separately."
+            )
+
+        payload = promote_baseline(
+            repo=repo,
+            apk=apk,
+            version=version,
+            decompiled=decompiled,
+            state_root=state_root,
+        )
+        print(f"\nBaseline promoted to {payload['version']}.")
+        print("\nNo commit, push, tag, or release was performed.")
+        return 0
+
     if not args.apply:
         if args.simulate_rename:
             expected = {
@@ -2756,7 +2812,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "\nRESULT: SIMULATED RENAME PASSED. With all known symbols "
                 "hidden, structural discovery recovered every required "
-                "9.28.51 class and method. The indistinguishable move "
+                f"{version} class and method. The indistinguishable move "
                 "notifier was safely left optional because the runtime has "
                 "a verified full-refresh fallback. Nothing was modified."
             )
@@ -2867,16 +2923,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"backup. File backup: {backup}"
             )
         raise
-
-    if args.promote_baseline:
-        payload = promote_baseline(
-            repo=repo,
-            apk=apk,
-            version=version,
-            decompiled=decompiled,
-            state_root=state_root,
-        )
-        print(f"\nBaseline promoted to {payload['version']}.")
 
     print("\nNo commit, push, tag, or release was performed.")
     return 0
