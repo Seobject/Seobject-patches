@@ -1,3 +1,9 @@
+## [1.1.0-dev.18](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.17...v1.1.0-dev.18) (2026-07-28)
+
+### Bug Fixes
+
+* repair Pin playlists baseline promotion ([6095ece](https://github.com/Seobject/Seobject-patches/commit/6095ece4753f8e0da86930b55ef6398e90c68078))
+
 ## [1.1.0-dev.17](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.16...v1.1.0-dev.17) (2026-07-22)
 
 ### Bug Fixes
