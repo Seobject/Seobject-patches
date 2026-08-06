@@ -1,3 +1,9 @@
+## [1.1.0-dev.20](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.19...v1.1.0-dev.20) (2026-08-06)
+
+### Bug Fixes
+
+* **pin-playlists:** integrate Player setting and restart prompt ([c2f5d62](https://github.com/Seobject/Seobject-patches/commit/c2f5d626f4310cec36f2655c090089c63ee2d42b))
+
 ## [1.1.0-dev.19](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.18...v1.1.0-dev.19) (2026-08-06)
 
 ### Bug Fixes
