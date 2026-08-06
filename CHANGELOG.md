@@ -1,3 +1,9 @@
+## [1.1.0-dev.19](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.18...v1.1.0-dev.19) (2026-08-06)
+
+### Bug Fixes
+
+* support YouTube Music 9.30.52 ([095265f](https://github.com/Seobject/Seobject-patches/commit/095265f2df53462725ee745d77275bab2686617e))
+
 ## [1.1.0-dev.18](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.17...v1.1.0-dev.18) (2026-07-28)
 
 ### Bug Fixes
