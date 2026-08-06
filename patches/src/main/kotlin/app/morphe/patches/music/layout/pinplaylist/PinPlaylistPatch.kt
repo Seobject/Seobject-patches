@@ -7,7 +7,6 @@ import app.morphe.patcher.methodCall
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.smali.ExternalLabel
 import app.seobject.patches.music.Compatibility.COMPATIBILITY_YOUTUBE_MUSIC
-import app.seobject.patches.music.settings.pinPlaylistSettingsResourcePatch
 import app.morphe.util.cloneMutable
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.ClassDef
@@ -4522,7 +4521,6 @@ val pinPlaylistPatch = bytecodePatch(
     name = "Pin playlists",
     description = "Pins playlists to the top of the YouTube Music Library.",
 ) {
-    dependsOn(pinPlaylistSettingsResourcePatch)
     compatibleWith(COMPATIBILITY_YOUTUBE_MUSIC)
     extendWith("extensions/pinplaylist.mpe")
 
@@ -6122,8 +6120,8 @@ val pinPlaylistPatch = bytecodePatch(
         /*
          * Every extension is merged during patch execution before any patch
          * finalizer runs. Locate Morphe's preference fragment structurally by
-         * the resource name it inflates, then install the standalone settings
-         * path immediately after addPreferencesFromResource().
+         * the resource name it inflates, then attach the Pin playlists switch
+         * to Morphe's existing Player screen after addPreferencesFromResource().
          *
          * If no Morphe settings host is present, the Pin playlists feature
          * remains functional with its default settings and this optional UI
