@@ -33,34 +33,62 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @SuppressWarnings({"unused", "rawtypes", "unchecked"})
 public final class PinPlaylistPatch {
     private static final String TAG = "PinPlaylist";
-    private static final String BUILD_ID = "v130-scoped-menu-playback-release";
+
     /*
-     * Newest symbols are first for the normal fast path. The exact 9.28.51
-     * classes were verified from its decompiled APK:
-     *   arfx: native menu-item accessors
-     *   btke: native icon enum
-     *   bctx: native text-message factory
-     *   hzl: Library Litho RecyclerView adapter
-     *   jx/fs: adapter move/full-refresh notifications
+     * Release-changing names are compatibility data, not runtime logic.
+     *
+     * Keep this catalog as a single updater-owned boundary. The updater adds
+     * values discovered from each unpatched APK without rewriting semantic
+     * reflection or hook logic and without removing earlier compatibility.
+     * Ordering is significant: newly verified candidates are added first so
+     * they become the normal fast path while every prior entry remains.
      */
+    // <pin-playlist-updater:runtime-compatibility-profile>
+    private static final class RuntimeCompatibilityCatalog {
+        private static final String DIAGNOSTIC_ID = "auto-ytm93052-symbols";
+        private static final String[] MENU_ITEM_HELPER_CLASS_NAMES =
+                {"argw", "afsi", "anpz", "apkp", "apid", "akvg", "aose", "arib", "arfx", "aqxr", "arad", "arbe", "aqft"};
+        private static final String[] ICON_ENUM_CLASS_NAMES =
+                {"btlt", "bato", "blwl", "bpvd", "bpqq", "bhvy", "bszh", "bnsy", "btpn", "btke", "bsts", "btcw", "brfz"};
+        private static final String[] TEXT_HELPER_CLASS_NAMES =
+                {"bctp", "aoqs", "axqc", "balw", "bagt", "augk", "bcmg", "ayzc", "bcwj", "bctx", "bcjc", "bcow", "bbjy"};
+        private static final String[] LIBRARY_ADAPTER_CLASS_NAMES =
+                {"hyo", "gzi", "hre", "hte", "hsi", "hgo", "hsm", "hzo", "hzl", "hxs", "hyz", "hvx"};
+        private static final String[] ADAPTER_MOVE_NOTIFICATION_METHOD_NAMES =
+                {"jx", "iF", "jv", "js"};
+        private static final String[] ADAPTER_REFRESH_NOTIFICATION_METHOD_NAMES =
+                {"fy", "dn", "dX", "et", "er", "dw", "eg", "fw", "fs", "eB", "fq", "fo", "fj"};
+
+        private RuntimeCompatibilityCatalog() {
+        }
+    }
+    // </pin-playlist-updater:runtime-compatibility-profile>
+
+    /*
+     * Semantic runtime aliases keep the implementation independent of how
+     * the updater discovers or appends to the compatibility catalog.
+     */
+    private static final String BUILD_ID =
+            RuntimeCompatibilityCatalog.DIAGNOSTIC_ID;
     private static final String[] MENU_ITEM_HELPER_CLASSES =
-            {"arfx", "aqxr", "arad", "arbe", "aqft"};
+            RuntimeCompatibilityCatalog.MENU_ITEM_HELPER_CLASS_NAMES;
     private static final String[] ICON_ENUM_CLASSES =
-            {"btke", "bsts", "btcw", "brfz"};
+            RuntimeCompatibilityCatalog.ICON_ENUM_CLASS_NAMES;
     private static final String[] TEXT_HELPER_CLASSES =
-            {"bctx", "bcjc", "bcow", "bbjy"};
+            RuntimeCompatibilityCatalog.TEXT_HELPER_CLASS_NAMES;
     private static final String[] LIBRARY_ADAPTER_CLASSES =
-            {"hzl", "hxs", "hyz", "hvx"};
+            RuntimeCompatibilityCatalog.LIBRARY_ADAPTER_CLASS_NAMES;
     private static final String[] ADAPTER_MOVE_NOTIFY_METHODS =
-            {"jx", "iF", "jv", "js"};
+            RuntimeCompatibilityCatalog.ADAPTER_MOVE_NOTIFICATION_METHOD_NAMES;
     private static final String[] ADAPTER_FULL_NOTIFY_METHODS =
-            {"fs", "eB", "fq", "fo", "fj"};
+            RuntimeCompatibilityCatalog.ADAPTER_REFRESH_NOTIFICATION_METHOD_NAMES;
     private static final String MENU_TITLE_PIN =
             "Pin playlist to Library";
     private static final String MENU_TITLE_UNPIN =
@@ -219,6 +247,27 @@ public final class PinPlaylistPatch {
     private static boolean adapterProxyHookLogged;
     private static int adapterProxyAttemptLogCount;
     private static int directSourceRowLogCount;
+    private static final int ADAPTER_PROXY_TRANSACTION_DIAGNOSTIC_LIMIT = 240;
+    private static final AtomicInteger
+            adapterProxyTransactionDiagnosticCount = new AtomicInteger();
+
+    private static void logAdapterProxyTransactionDiagnostic(
+            String details
+    ) {
+        while (true) {
+            int count = adapterProxyTransactionDiagnosticCount.get();
+            if (count >= ADAPTER_PROXY_TRANSACTION_DIAGNOSTIC_LIMIT) {
+                return;
+            }
+            if (adapterProxyTransactionDiagnosticCount.compareAndSet(
+                    count,
+                    count + 1
+            )) {
+                Log.d(TAG, "AdapterProxyTransactionDiagnostic " + details);
+                return;
+            }
+        }
+    }
 
     @Nullable
     private static volatile Class<?> adapterProxyOwnerClass;
@@ -231,6 +280,22 @@ public final class PinPlaylistPatch {
 
     private static final IdentityHashMap<Object, Object>
             adapterProxyVisualAdapters = new IdentityHashMap<>();
+
+    /*
+     * Exact relationship edge supplied by the generated mutation hook:
+     * AdapterProxy owner -> controller receiving the completed render list.
+     * The scoped Library adapter hook later exposes that same controller as
+     * one of the adapter's direct fields, which makes the visual bridge
+     * structural even before a pin or playlist identity exists.
+     */
+    private static final IdentityHashMap<Object, Object>
+            adapterProxyControllers = new IdentityHashMap<>();
+
+    private static final IdentityHashMap<Object, Long>
+            adapterProxySourceGenerations = new IdentityHashMap<>();
+
+    private static final IdentityHashMap<Object, Integer>
+            adapterProxyLastSourceIndices = new IdentityHashMap<>();
 
     /*
      * The obfuscated visual-adapter class is reused by Library playlists,
@@ -383,32 +448,161 @@ public final class PinPlaylistPatch {
                 }
             };
 
-    private static final ThreadLocal<Object>
-            pendingAdapterProxyOwner = new ThreadLocal<>();
+    private static final ThreadLocal<AdapterProxyTransaction>
+            pendingAdapterProxyTransaction = new ThreadLocal<>();
+
+    private static final class AdapterProxyTransaction {
+        final Object owner;
+        final Object controller;
+        final long generation;
+
+        AdapterProxyTransaction(
+                Object owner,
+                @Nullable Object controller,
+                long generation
+        ) {
+            this.owner = owner;
+            this.controller = controller;
+            this.generation = generation;
+        }
+    }
 
     private static final class AdapterProxySource {
         final Object owner;
         final int sourceIndex;
+        final long generation;
         Object sourceAdapter;
+        Integer sourceCount;
         Object sourceObject;
         Object renderInfo;
         long completedAtMs;
+        boolean submissionVerified;
 
-        AdapterProxySource(Object owner, int sourceIndex) {
+        AdapterProxySource(
+                Object owner,
+                int sourceIndex,
+                long generation
+        ) {
             this.owner = owner;
             this.sourceIndex = sourceIndex;
+            this.generation = generation;
         }
     }
 
+    private static final class AdapterProxySubmittedRun {
+        final int sourceCount;
+        final List<AdapterProxySource> orderedSources;
+        final List<Object> renderInfos;
+        final Map<Integer, AdapterProxySource> sourcesByIndex;
 
-    private static final class AdapterProxyMapping {
+        AdapterProxySubmittedRun(
+                int sourceCount,
+                List<AdapterProxySource> orderedSources,
+                List<Object> renderInfos,
+                Map<Integer, AdapterProxySource> sourcesByIndex
+        ) {
+            this.sourceCount = sourceCount;
+            this.orderedSources =
+                    Collections.unmodifiableList(
+                            new ArrayList<>(orderedSources)
+                    );
+            this.renderInfos =
+                    Collections.unmodifiableList(
+                            new ArrayList<>(renderInfos)
+                    );
+            this.sourcesByIndex =
+                    Collections.unmodifiableMap(
+                            new LinkedHashMap<>(sourcesByIndex)
+                    );
+        }
+    }
+    /**
+     * Safety invariants shared by version-independent compatibility paths.
+     *
+     * Compatibility discovery may propose a position mapping, but it may
+     * never bypass these checks before that mapping reaches patch behavior.
+     */
+    private static final class PinPlaylistCompatibilityInvariants {
+        private PinPlaylistCompatibilityInvariants() {
+        }
+
+        /**
+         * Verifies that every source position appears exactly once.
+         */
+        static boolean isCompletePermutation(
+                int sourceCount,
+                int[] visualToSource
+        ) {
+            if (sourceCount < 0
+                    || visualToSource == null
+                    || visualToSource.length != sourceCount) {
+                return false;
+            }
+
+            boolean[] seen = new boolean[sourceCount];
+
+            for (int sourcePosition : visualToSource) {
+                if (sourcePosition < 0
+                        || sourcePosition >= sourceCount
+                        || seen[sourcePosition]) {
+                    return false;
+                }
+
+                seen[sourcePosition] = true;
+            }
+
+            return true;
+        }
+
+        /**
+         * Validates discovered row identities before they can reach
+         * ordering behavior.
+         */
+        static boolean hasValidCandidateRows(
+                int rowCount,
+                int minimumMappedRows,
+                Map<Integer, String> idsByListPosition
+        ) {
+            if (rowCount < 0
+                    || minimumMappedRows < 0
+                    || idsByListPosition == null
+                    || idsByListPosition.size() < minimumMappedRows) {
+                return false;
+            }
+
+            Set<String> distinctIds = new LinkedHashSet<>();
+
+            for (Map.Entry<Integer, String> entry
+                    : idsByListPosition.entrySet()) {
+                Integer position = entry.getKey();
+                String playlistId = entry.getValue();
+
+                if (position == null
+                        || position < 0
+                        || position >= rowCount
+                        || !isPersistentPlaylistId(playlistId)
+                        || !distinctIds.add(playlistId)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    /**
+     * Immutable evidence proposed by a version-independent compatibility
+     * path. This object carries structural evidence only; it does not
+     * apply ordering or change pin behavior.
+     */
+    private static final class PinPlaylistCompatibilityCandidate {
         final String path;
         final int offset;
         final int score;
         final Map<Integer, String> idsByListPosition;
         final boolean ambiguous;
 
-        AdapterProxyMapping(
+        PinPlaylistCompatibilityCandidate(
                 String path,
                 int offset,
                 int score,
@@ -418,10 +612,297 @@ public final class PinPlaylistPatch {
             this.path = path;
             this.offset = offset;
             this.score = score;
-            this.idsByListPosition = idsByListPosition;
+            this.idsByListPosition = Collections.unmodifiableMap(
+                    new LinkedHashMap<>(idsByListPosition)
+            );
             this.ambiguous = ambiguous;
         }
+
+        /**
+         * Applies the shared minimum evidence policy before a candidate
+         * can reach ordering behavior.
+         */
+        boolean isUsable(
+                int rowCount,
+                int minimumMappedRows
+        ) {
+            return !ambiguous
+                    && PinPlaylistCompatibilityInvariants
+                    .hasValidCandidateRows(
+                            rowCount,
+                            minimumMappedRows,
+                            idsByListPosition
+                    );
+        }
     }
+
+
+
+    /**
+     * Selects the strongest safe candidate without allowing a score tie
+     * between conflicting mappings to reach protected patch behavior.
+     */
+    private static final class CompatibilityCandidateSelector {
+        private CompatibilityCandidateSelector() {
+        }
+
+        @Nullable
+        static PinPlaylistCompatibilityCandidate selectBest(
+                int rowCount,
+                int minimumMappedRows,
+                List<PinPlaylistCompatibilityCandidate> candidates
+        ) {
+            if (candidates == null || candidates.isEmpty()) {
+                return null;
+            }
+
+            PinPlaylistCompatibilityCandidate best = null;
+
+            for (PinPlaylistCompatibilityCandidate candidate
+                    : candidates) {
+                if (candidate == null
+                        || !candidate.isUsable(
+                        rowCount,
+                        minimumMappedRows
+                )) {
+                    continue;
+                }
+
+                if (best == null || candidate.score > best.score) {
+                    best = candidate;
+                    continue;
+                }
+
+                if (candidate.score == best.score
+                        && !hasEquivalentEvidence(best, candidate)) {
+                    Log.d(TAG, "CompatibilityCandidateTieRejected"
+                            + " firstPath=" + best.path
+                            + " secondPath=" + candidate.path
+                            + " score=" + candidate.score);
+                    return null;
+                }
+            }
+
+            return best;
+        }
+
+        private static boolean hasEquivalentEvidence(
+                PinPlaylistCompatibilityCandidate first,
+                PinPlaylistCompatibilityCandidate second
+        ) {
+            return first.offset == second.offset
+                    && first.idsByListPosition.equals(
+                    second.idsByListPosition
+            );
+        }
+    }
+
+    /**
+     * Exact snapshot of adapter-remap state used to roll back any failed
+     * or partially applied compatibility attempt.
+     */
+    private static final class AdapterPositionRemapRollbackSnapshot {
+        private final IdentityHashMap<Object, int[]> positionMaps =
+                new IdentityHashMap<>();
+
+        private final Object factoryOwner;
+        private final Object factoryVisualAdapter;
+        private final Object libraryAdapter;
+
+        private AdapterPositionRemapRollbackSnapshot() {
+            synchronized (adapterVisualToSourcePositions) {
+                for (Map.Entry<Object, int[]> entry
+                        : adapterVisualToSourcePositions.entrySet()) {
+                    int[] value = entry.getValue();
+                    positionMaps.put(
+                            entry.getKey(),
+                            value == null
+                                    ? null
+                                    : java.util.Arrays.copyOf(
+                                    value,
+                                    value.length
+                            )
+                    );
+                }
+            }
+
+            factoryOwner = activeAdapterProxyFactoryOwner;
+            factoryVisualAdapter =
+                    activeAdapterProxyFactoryVisualAdapter;
+            libraryAdapter = activeLibraryAdapter;
+        }
+
+        void restore() {
+            synchronized (adapterVisualToSourcePositions) {
+                adapterVisualToSourcePositions.clear();
+
+                for (Map.Entry<Object, int[]> entry
+                        : positionMaps.entrySet()) {
+                    int[] value = entry.getValue();
+                    adapterVisualToSourcePositions.put(
+                            entry.getKey(),
+                            value == null
+                                    ? null
+                                    : java.util.Arrays.copyOf(
+                                    value,
+                                    value.length
+                            )
+                    );
+                }
+            }
+
+            activeAdapterProxyFactoryOwner = factoryOwner;
+            activeAdapterProxyFactoryVisualAdapter =
+                    factoryVisualAdapter;
+            activeLibraryAdapter = libraryAdapter;
+        }
+    }
+
+    /**
+     * Common boundary for version-independent compatibility discovery.
+     *
+     * Each strategy supplies its own strongly typed source and row inputs,
+     * while the protected core receives only an immutable candidate.
+     */
+    private interface LibraryCompatibilityStrategy<S, R> {
+        String name();
+
+        @Nullable
+        PinPlaylistCompatibilityCandidate discover(
+                S source,
+                R rows,
+                Context context,
+                List<String> pinOrder
+        );
+    }
+
+    /**
+     * Existing adapter-proxy direct-source discovery behind the shared
+     * strategy boundary. The discovery algorithm remains unchanged.
+     */
+    private static final class AdapterProxyDirectSourceStrategy
+            implements LibraryCompatibilityStrategy<
+            List<AdapterProxySource>, List<?>> {
+        @Override
+        public String name() {
+            return "orderedDirectSource";
+        }
+
+        @Override
+        @Nullable
+        public PinPlaylistCompatibilityCandidate discover(
+                List<AdapterProxySource> orderedSources,
+                List<?> renderInfos,
+                Context context,
+                List<String> pinOrder
+        ) {
+            return chooseAdapterProxyDirectSourceMapping(
+                    orderedSources,
+                    renderInfos,
+                    context,
+                    pinOrder
+            );
+        }
+    }
+
+    private static final LibraryCompatibilityStrategy<
+            List<AdapterProxySource>, List<?>>
+            ADAPTER_PROXY_DIRECT_SOURCE_STRATEGY =
+            new AdapterProxyDirectSourceStrategy();
+    /**
+     * Boundary for native source containers that can prepare Library rows.
+     * A strategy may inspect and mutate only its supplied private model.
+     */
+    private interface NativeLibraryPreparationStrategy<T> {
+        String name();
+
+        void prepare(T source);
+    }
+
+    /**
+     * Existing SparseArray transaction preparation behind a named
+     * structural strategy. This does not activate the dormant hook.
+     */
+    private static final class SparseArrayTransactionStrategy
+            implements NativeLibraryPreparationStrategy<Object> {
+        @Override
+        public String name() {
+            return "sparseArrayTransaction";
+        }
+
+        @Override
+        public void prepare(Object transaction) {
+            prepareNativeLibrarySourceTransactionInternal(transaction);
+        }
+    }
+
+    /**
+     * Boundary for direct native row-model preparation.
+     */
+    private interface NativeRowModelStrategy {
+        String name();
+
+        boolean prepare(Object owner, Object rows);
+    }
+
+    private static final class DirectRowModelStrategy
+            implements NativeRowModelStrategy {
+        @Override
+        public String name() {
+            return "directRowModel";
+        }
+
+        @Override
+        public boolean prepare(Object owner, Object rows) {
+            return prepareDiscoveredNativeRowListInternal(owner, rows);
+        }
+    }
+
+    /**
+     * Boundary for identity learned from the completed native bind path.
+     * The public Kotlin hooks remain stable and delegate through here.
+     */
+    private interface BoundRowIdentityStrategy {
+        String name();
+
+        void begin(Object adapter, Object holder, int position);
+
+        void finish(Object holderOrView);
+    }
+
+    private static final class DeferredBoundRowIdentityStrategy
+            implements BoundRowIdentityStrategy {
+        @Override
+        public String name() {
+            return "boundRowIdentity";
+        }
+
+        @Override
+        public void begin(
+                Object adapter,
+                Object holder,
+                int position
+        ) {
+            beginBoundLibraryRowInternal(adapter, holder, position);
+        }
+
+        @Override
+        public void finish(Object holderOrView) {
+            finishBoundLibraryRowInternal(holderOrView);
+        }
+    }
+
+    private static final NativeLibraryPreparationStrategy<Object>
+            SPARSE_ARRAY_TRANSACTION_STRATEGY =
+            new SparseArrayTransactionStrategy();
+
+    private static final NativeRowModelStrategy
+            DIRECT_ROW_MODEL_STRATEGY =
+            new DirectRowModelStrategy();
+
+    private static final BoundRowIdentityStrategy
+            BOUND_ROW_IDENTITY_STRATEGY =
+            new DeferredBoundRowIdentityStrategy();
 
 
     /*
@@ -5112,8 +5593,7 @@ public final class PinPlaylistPatch {
         if (owner == null) return;
 
         boolean candidate = sourceCount != null
-                && sourceCount >= 6
-                && sourceCount <= 24;
+                && sourceCount > 0;
 
         synchronized (adapterProxyCandidateOwners) {
             if (candidate) {
@@ -5223,6 +5703,65 @@ public final class PinPlaylistPatch {
     ) {
         if (!isLibraryAdapter(visualAdapter)) return;
 
+        Object structurallyMatchedOwner = null;
+        List<Object> adapterChildren =
+                directObfuscatedObjects(visualAdapter);
+        synchronized (adapterProxyControllers) {
+            for (Map.Entry<Object, Object> entry
+                    : adapterProxyControllers.entrySet()) {
+                Object controller = entry.getValue();
+                boolean exactControllerField = false;
+                for (Object child : adapterChildren) {
+                    if (child == controller) {
+                        exactControllerField = true;
+                        break;
+                    }
+                }
+                if (controller == null || !exactControllerField) {
+                    continue;
+                }
+                if (structurallyMatchedOwner != null
+                        && structurallyMatchedOwner != entry.getKey()) {
+                    structurallyMatchedOwner = null;
+                    break;
+                }
+                structurallyMatchedOwner = entry.getKey();
+            }
+        }
+
+        if (structurallyMatchedOwner != null) {
+            Object sourceAdapter = getAdapterProxySourceAdapter(
+                    structurallyMatchedOwner
+            );
+            Integer sourceCount = invokeIntNoArg(sourceAdapter, "a");
+            if (sourceAdapter != null
+                    && sourceCount != null
+                    && sourceCount > 0) {
+                synchronized (adapterProxyVisualAdapters) {
+                    adapterProxyVisualAdapters.put(
+                            structurallyMatchedOwner,
+                            visualAdapter
+                    );
+                }
+                activeAdapterProxyFactoryOwner =
+                        structurallyMatchedOwner;
+                activeAdapterProxyFactoryVisualAdapter = visualAdapter;
+                activeLibraryAdapter = visualAdapter;
+
+                if (adapterProxyVisualBridgeLogCount < 12) {
+                    adapterProxyVisualBridgeLogCount++;
+                    Log.d(TAG, "AdapterProxyVisualBridge"
+                            + " discovered=true"
+                            + " active=" + hasAnyPinsFast()
+                            + " ownerIdentity="
+                            + identityString(structurallyMatchedOwner)
+                            + " visualAdapterIdentity="
+                            + identityString(visualAdapter)
+                            + " sourceCount=" + sourceCount);
+                }
+            }
+        }
+
         Object owner = activeAdapterProxyFactoryOwner;
         int[] visualToSource = null;
         Integer sourceCount = null;
@@ -5262,8 +5801,7 @@ public final class PinPlaylistPatch {
                 || visualToSource == null
                 || sourceCount == null
                 || sourceCount != visualToSource.length
-                || sourceCount < 10
-                || sourceCount > 24) {
+                || sourceCount <= 0) {
             return;
         }
 
@@ -5271,7 +5809,7 @@ public final class PinPlaylistPatch {
         synchronized (ownerVisualPlaylistIds) {
             Map<Integer, String> ids =
                     ownerVisualPlaylistIds.get(owner);
-            if (ids == null || ids.size() < 3) return;
+            if (ids == null || ids.isEmpty()) return;
             playlistIds = new LinkedHashMap<>(ids);
         }
 
@@ -5349,8 +5887,7 @@ public final class PinPlaylistPatch {
 
         if (sourceAdapter == null
                 || sourceCount == null
-                || sourceCount < 10
-                || sourceCount > 24) {
+                || sourceCount <= 0) {
             updateAdapterProxyCandidateOwner(owner, sourceCount);
 
             if (adapterProxyFactoryInstallLogCount < 12) {
@@ -5582,11 +6119,11 @@ public final class PinPlaylistPatch {
         }
 
         /*
-         * The Library currently has ten ordinary playlist rows. Keep this
-         * threshold broad enough for additions/deletions while rejecting
-         * unrelated bfrh-backed lists.
+         * Library identity comes from the proven owner/controller/visual
+         * relationship, never from a row-count window. One resolved playlist
+         * is sufficient to build a safe permutation; zero is not.
          */
-        if (playlistIdByPosition.size() < 3) {
+        if (playlistIdByPosition.isEmpty()) {
             if (adapterProxyFactoryMapLogCount < 24) {
                 adapterProxyFactoryMapLogCount++;
                 Log.d(TAG, "PreFactoryPositionMapSkipped"
@@ -5720,23 +6257,19 @@ public final class PinPlaylistPatch {
             );
         }
 
-        boolean[] seen = new boolean[sourceCount];
-
-        for (int sourcePosition : visualToSource) {
-            if (sourcePosition < 0
-                    || sourcePosition >= sourceCount
-                    || seen[sourcePosition]) {
-                Log.d(TAG, "PreFactoryPositionMapSkipped"
-                        + " reason=notPermutation"
-                        + " visualToSource="
-                        + java.util.Arrays.toString(
-                        visualToSource
-                ));
-                return null;
-            }
-
-            seen[sourcePosition] = true;
+        if (!PinPlaylistCompatibilityInvariants.isCompletePermutation(
+                sourceCount,
+                visualToSource
+        )) {
+            Log.d(TAG, "PreFactoryPositionMapSkipped"
+                    + " reason=notPermutation"
+                    + " visualToSource="
+                    + java.util.Arrays.toString(
+                    visualToSource
+            ));
+            return null;
         }
+
 
         Log.d(TAG, "PreFactoryPositionMap"
                 + " installed=true"
@@ -5782,24 +6315,16 @@ public final class PinPlaylistPatch {
         boolean hasPins = hasAnyPinsFast();
 
         /*
-         * For an unknown owner, capture only its first source frame. The first
-         * frame exposes the source adapter and allows structural validation.
-         * With no pins, later frames have no work. With a pre-factory map,
-         * later frames are also unnecessary because position zero performs
-         * every required rebuild and the visual adapter owns the permutation.
+         * Once a position map is active, position zero performs every needed
+         * rebuild. Before activation, retain every cheap source frame even
+         * with zero pins: the completed batch is the provenance proof that
+         * links this owner to the exact submitted render-info list.
          */
         if (sourceIndex != 0) {
-            if (!hasPins) return;
-
             synchronized (adapterProxyFactoryVisualToSource) {
                 if (adapterProxyFactoryVisualToSource.containsKey(owner)) {
                     return;
                 }
-            }
-
-            if (!isAdapterProxyCandidateOwner(owner)
-                    && !isConfirmedLibraryProxyOwner(owner)) {
-                return;
             }
         }
 
@@ -5812,13 +6337,55 @@ public final class PinPlaylistPatch {
         ArrayList<AdapterProxySource> stack =
                 pendingAdapterProxySources.get();
 
-        stack.add(
-                new AdapterProxySource(owner, sourceIndex)
-        );
+        long generation;
+        synchronized (adapterProxySourceGenerations) {
+            Long current = adapterProxySourceGenerations.get(owner);
+            Integer previousIndex =
+                    adapterProxyLastSourceIndices.get(owner);
+            if (current == null) current = 0L;
+            if (previousIndex == null || sourceIndex <= previousIndex) {
+                current++;
+                adapterProxySourceGenerations.put(owner, current);
+            }
+            adapterProxyLastSourceIndices.put(owner, sourceIndex);
+            generation = current;
+        }
+
+        stack.add(new AdapterProxySource(
+                owner,
+                sourceIndex,
+                generation
+        ));
     }
 
     public static void captureAdapterProxySourceAdapter(
             @Nullable Object sourceAdapter
+    ) {
+        Integer legacyCount = invokeIntNoArg(sourceAdapter, "a");
+        captureAdapterProxySourceAdapterInternal(
+                sourceAdapter,
+                legacyCount
+        );
+    }
+
+    /**
+     * Current item-converter injections use only this overload. The count is
+     * produced by a structurally proven invocation on the exact saved getItem
+     * receiver; runtime code never has to guess a method name or descriptor.
+     */
+    public static void captureAdapterProxySourceAdapter(
+            @Nullable Object sourceAdapter,
+            int sourceCount
+    ) {
+        captureAdapterProxySourceAdapterInternal(
+                sourceAdapter,
+                sourceCount
+        );
+    }
+
+    private static void captureAdapterProxySourceAdapterInternal(
+            @Nullable Object sourceAdapter,
+            @Nullable Integer sourceCount
     ) {
         ArrayList<AdapterProxySource> stack =
                 pendingAdapterProxySources.get();
@@ -5826,8 +6393,7 @@ public final class PinPlaylistPatch {
 
         AdapterProxySource source = stack.get(stack.size() - 1);
         source.sourceAdapter = sourceAdapter;
-
-        Integer sourceCount = invokeIntNoArg(sourceAdapter, "a");
+        source.sourceCount = sourceCount;
         updateAdapterProxyCandidateOwner(source.owner, sourceCount);
 
         if (source.sourceIndex == 0
@@ -6245,6 +6811,12 @@ public final class PinPlaylistPatch {
     private static void prepareNativeLibrarySourceTransaction(
             @Nullable Object transaction
     ) {
+        SPARSE_ARRAY_TRANSACTION_STRATEGY.prepare(transaction);
+    }
+
+    private static void prepareNativeLibrarySourceTransactionInternal(
+            @Nullable Object transaction
+    ) {
         if (!isFeatureEnabled()
                 || !hasAnyPinsFast()
                 || hasAnyInstalledFactoryPositionMap()
@@ -6278,8 +6850,7 @@ public final class PinPlaylistPatch {
                 }
 
                 if (sourceRows == null
-                        || sourceRows.size() < 6
-                        || sourceRows.size() > 24) {
+                        || sourceRows.size() == 0) {
                     continue;
                 }
 
@@ -6394,11 +6965,18 @@ public final class PinPlaylistPatch {
             @Nullable Object owner,
             @Nullable Object rows
     ) {
+        return DIRECT_ROW_MODEL_STRATEGY.prepare(owner, rows);
+    }
+
+    private static boolean prepareDiscoveredNativeRowListInternal(
+            @Nullable Object owner,
+            @Nullable Object rows
+    ) {
         if (!(rows instanceof List)) return false;
 
         List rawList = (List) rows;
         int total = rawList.size();
-        if (total < 6 || total > 24) return false;
+        if (total <= 0) return false;
 
         Context context = resolveApplicationContext();
         if (context == null) return false;
@@ -6558,15 +7136,37 @@ public final class PinPlaylistPatch {
     public static void captureAdapterProxyRenderInfo(
             @Nullable Object renderInfo
     ) {
+        logAdapterProxyTransactionDiagnostic(
+                "event=captureAdapterProxyRenderInfo.entered"
+                        + " renderInfoType="
+                        + objectTypeName(renderInfo)
+                        + " renderInfoIdentity="
+                        + identityString(renderInfo)
+        );
+
         if (!isFeatureEnabled()) {
             pendingAdapterProxySources.remove();
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedFeatureDisabled"
+            );
             return;
         }
 
         ArrayList<AdapterProxySource> stack =
                 pendingAdapterProxySources.get();
 
-        if (stack.isEmpty()) return;
+        if (stack.isEmpty()) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedEmptySourceStack"
+                            + " renderInfoType="
+                            + objectTypeName(renderInfo)
+                            + " renderInfoIdentity="
+                            + identityString(renderInfo)
+            );
+            return;
+        }
 
         AdapterProxySource source =
                 stack.remove(stack.size() - 1);
@@ -6575,32 +7175,106 @@ public final class PinPlaylistPatch {
             pendingAdapterProxySources.remove();
         }
 
-        if (!isAdapterProxyOwner(source.owner, false)
-                || renderInfo == null
-                || !hasAnyPinsFast()) {
+        if (!isAdapterProxyOwner(source.owner, false)) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedInvalidOwner"
+                            + " ownerType="
+                            + objectTypeName(source.owner)
+                            + " ownerIdentity="
+                            + identityString(source.owner)
+                            + " generation=" + source.generation
+            );
             return;
         }
 
-        Integer sourceCount = null;
+        if (renderInfo == null) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedNullRenderInfo"
+                            + " ownerType="
+                            + objectTypeName(source.owner)
+                            + " ownerIdentity="
+                            + identityString(source.owner)
+                            + " generation=" + source.generation
+            );
+            return;
+        }
+
+        Integer sourceCount = source.sourceCount;
         Object sourceAdapter = source.sourceAdapter != null
                 ? source.sourceAdapter
                 : getAdapterProxySourceAdapter(source.owner);
-
-        if (sourceAdapter != null) {
-            sourceCount =
-                    invokeIntNoArg(sourceAdapter, "a");
-        }
 
         updateAdapterProxyCandidateOwner(
                 source.owner,
                 sourceCount
         );
 
-        if (sourceCount == null
-                || sourceCount < 6
-                || sourceCount > 24
-                || (!isAdapterProxyCandidateOwner(source.owner)
-                && !isConfirmedLibraryProxyOwner(source.owner))) {
+        if (sourceCount == null) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedMissingSourceCount"
+                            + " ownerIdentity="
+                            + identityString(source.owner)
+                            + " sourceAdapterType="
+                            + objectTypeName(sourceAdapter)
+                            + " sourceAdapterIdentity="
+                            + identityString(sourceAdapter)
+                            + " generation=" + source.generation
+            );
+            return;
+        }
+
+        if (sourceCount <= 0) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedNonPositiveSourceCount"
+                            + " ownerIdentity="
+                            + identityString(source.owner)
+                            + " sourceCount=" + sourceCount
+                            + " generation=" + source.generation
+            );
+            return;
+        }
+
+        if (source.sourceAdapter == source.sourceObject) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedSourceObjectAsAdapter"
+                            + " ownerIdentity="
+                            + identityString(source.owner)
+                            + " sourceAdapterIdentity="
+                            + identityString(source.sourceAdapter)
+                            + " generation=" + source.generation
+            );
+            return;
+        }
+
+        if (source.sourceIndex < 0
+                || source.sourceIndex >= sourceCount) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedSourceIndexOutsideCount"
+                            + " ownerIdentity="
+                            + identityString(source.owner)
+                            + " sourceIndex=" + source.sourceIndex
+                            + " sourceCount=" + sourceCount
+                            + " generation=" + source.generation
+            );
+            return;
+        }
+
+        if (!isAdapterProxyCandidateOwner(source.owner)
+                && !isConfirmedLibraryProxyOwner(source.owner)) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedUnconfirmedOwner"
+                            + " ownerIdentity="
+                            + identityString(source.owner)
+                            + " sourceCount=" + sourceCount
+                            + " generation=" + source.generation
+            );
             return;
         }
 
@@ -6610,6 +7284,14 @@ public final class PinPlaylistPatch {
                 source.owner,
                 sourceCount
         )) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=captureAdapterProxyRenderInfo.rejected"
+                            + " reason=rejectedActiveFactoryMap"
+                            + " ownerIdentity="
+                            + identityString(source.owner)
+                            + " sourceCount=" + sourceCount
+                            + " generation=" + source.generation
+            );
             return;
         }
 
@@ -6625,6 +7307,7 @@ public final class PinPlaylistPatch {
             }
         }
 
+        int capturedCount;
         synchronized (adapterProxySourceHistory) {
             ArrayList<AdapterProxySource> history =
                     adapterProxySourceHistory.get(source.owner);
@@ -6643,15 +7326,61 @@ public final class PinPlaylistPatch {
                 history.subList(0, history.size() - 300)
                         .clear();
             }
+            capturedCount = history.size();
         }
+
+        logAdapterProxyTransactionDiagnostic(
+                "event=captureAdapterProxyRenderInfo.accepted"
+                        + " ownerType="
+                        + objectTypeName(source.owner)
+                        + " ownerIdentity="
+                        + identityString(source.owner)
+                        + " renderInfoType="
+                        + objectTypeName(renderInfo)
+                        + " renderInfoIdentity="
+                        + identityString(renderInfo)
+                        + " generation=" + source.generation
+                        + " capturedCount=" + capturedCount
+                        + " sourceCount=" + sourceCount
+        );
     }
 
     public static void beginAdapterProxyReplaceAll(
             @Nullable Object owner
     ) {
-        if (!isFeatureEnabled()
-                || !hasAnyPinsFast()) {
-            pendingAdapterProxyOwner.remove();
+        beginAdapterProxyReplaceAllInternal(owner, null);
+    }
+
+    public static void beginAdapterProxyReplaceAll(
+            @Nullable Object owner,
+            @Nullable Object controller
+    ) {
+        beginAdapterProxyReplaceAllInternal(owner, controller);
+    }
+
+    private static void beginAdapterProxyReplaceAllInternal(
+            @Nullable Object owner,
+            @Nullable Object controller
+    ) {
+        logAdapterProxyTransactionDiagnostic(
+                "event=beginAdapterProxyReplaceAllInternal.entered"
+                        + " ownerType=" + objectTypeName(owner)
+                        + " ownerIdentity=" + identityString(owner)
+                        + " controllerType="
+                        + objectTypeName(controller)
+                        + " controllerIdentity="
+                        + identityString(controller)
+        );
+
+        if (!isFeatureEnabled()) {
+            pendingAdapterProxyTransaction.remove();
+            logAdapterProxyTransactionDiagnostic(
+                    "event=beginAdapterProxyReplaceAllInternal.rejected"
+                            + " reason=rejectedFeatureDisabled"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " controllerIdentity="
+                            + identityString(controller)
+            );
             return;
         }
 
@@ -6664,18 +7393,71 @@ public final class PinPlaylistPatch {
         if (!isAdapterProxyOwner(owner, false)
                 || (!isAdapterProxyCandidateOwner(owner)
                 && !isConfirmedLibraryProxyOwner(owner))) {
-            pendingAdapterProxyOwner.remove();
+            pendingAdapterProxyTransaction.remove();
+            logAdapterProxyTransactionDiagnostic(
+                    "event=beginAdapterProxyReplaceAllInternal.rejected"
+                            + " reason=rejectedInvalidOwner"
+                            + " ownerType=" + objectTypeName(owner)
+                            + " ownerIdentity=" + identityString(owner)
+                            + " controllerType="
+                            + objectTypeName(controller)
+                            + " controllerIdentity="
+                            + identityString(controller)
+            );
             return;
         }
 
-        pendingAdapterProxyOwner.set(owner);
+        Long generation;
+        synchronized (adapterProxySourceGenerations) {
+            generation = adapterProxySourceGenerations.get(owner);
+        }
+        if (generation == null || generation <= 0L) {
+            pendingAdapterProxyTransaction.remove();
+            logAdapterProxyTransactionDiagnostic(
+                    "event=beginAdapterProxyReplaceAllInternal.rejected"
+                            + " reason=rejectedMissingGeneration"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " controllerIdentity="
+                            + identityString(controller)
+                            + " generation=" + generation
+            );
+            return;
+        }
+
+        pendingAdapterProxyTransaction.set(
+                new AdapterProxyTransaction(
+                        owner,
+                        controller,
+                        generation
+                )
+        );
+        logAdapterProxyTransactionDiagnostic(
+                "event=beginAdapterProxyReplaceAllInternal.acceptedTransaction"
+                        + " ownerIdentity=" + identityString(owner)
+                        + " controllerIdentity="
+                        + identityString(controller)
+                        + " generation=" + generation
+        );
     }
 
     public static void prepareAdapterProxyRenderInfos(
             @Nullable Object renderInfoList
     ) {
-        Object owner = pendingAdapterProxyOwner.get();
-        pendingAdapterProxyOwner.remove();
+        AdapterProxyTransaction transaction =
+                pendingAdapterProxyTransaction.get();
+        logAdapterProxyTransactionDiagnostic(
+                "event=prepareAdapterProxyRenderInfos.entered"
+                        + " pendingTransaction="
+                        + (transaction != null)
+                        + " argumentType="
+                        + objectTypeName(renderInfoList)
+                        + " argumentIdentity="
+                        + identityString(renderInfoList)
+        );
+        pendingAdapterProxyTransaction.remove();
+        Object owner = transaction == null
+                ? null
+                : transaction.owner;
 
         if (!adapterProxyHookLogged) {
             adapterProxyHookLogged = true;
@@ -6683,28 +7465,82 @@ public final class PinPlaylistPatch {
                     + " adapterProxySourceHook=true");
         }
 
-        if (owner == null
-                || !(renderInfoList instanceof List)
-                || !isAdapterProxyOwner(owner, false)
-                || (!isAdapterProxyCandidateOwner(owner)
-                && !isConfirmedLibraryProxyOwner(owner))) {
+        if (owner == null) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedMissingTransaction"
+                            + " pendingTransaction="
+                            + (transaction != null)
+            );
             return;
         }
 
-        if (!isFeatureEnabled()
-                || !hasAnyPinsFast()) {
+        if (!(renderInfoList instanceof List)) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedNonList"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " argumentType="
+                            + objectTypeName(renderInfoList)
+                            + " argumentIdentity="
+                            + identityString(renderInfoList)
+            );
+            return;
+        }
+
+        if (!isAdapterProxyOwner(owner, false)
+                || (!isAdapterProxyCandidateOwner(owner)
+                && !isConfirmedLibraryProxyOwner(owner))) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedInvalidOwner"
+                            + " ownerType=" + objectTypeName(owner)
+                            + " ownerIdentity=" + identityString(owner)
+                            + " controllerType="
+                            + objectTypeName(transaction.controller)
+                            + " controllerIdentity="
+                            + identityString(transaction.controller)
+            );
+            return;
+        }
+
+        if (!isFeatureEnabled()) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedFeatureDisabled"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+            );
             return;
         }
 
         List rawList = (List) renderInfoList;
         int total = rawList.size();
 
+        logAdapterProxyTransactionDiagnostic(
+                "event=prepareAdapterProxyRenderInfos.acceptedInitialValidation"
+                        + " ownerIdentity=" + identityString(owner)
+                        + " controllerIdentity="
+                        + identityString(transaction.controller)
+                        + " generation=" + transaction.generation
+                        + " listSize=" + total
+        );
+
         /*
          * Reject unrelated large feeds before counting render-info classes or
          * searching source history. This is the path that previously walked
          * 25- and 90-row playlist song submissions on the UI thread.
          */
-        if (total < 6 || total > 24) return;
+        if (total <= 0) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedEmptyList"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+            );
+            return;
+        }
 
         if (hasActiveFactoryMapForOwner(
                 owner,
@@ -6719,26 +7555,51 @@ public final class PinPlaylistPatch {
                         + identityString(owner)
                         + " total=" + total);
             }
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedActiveFactoryMap"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+            );
             return;
         }
 
+        AdapterProxySubmittedRun submittedRun =
+                verifyAndPrepareAdapterProxySubmittedRun(
+                        owner,
+                        rawList,
+                        transaction.generation
+                );
+
+        if (submittedRun == null) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedSubmittedRunVerification"
+                            + " ownerIdentity="
+                            + identityString(owner)
+                            + " generation="
+                            + transaction.generation
+                            + " listSize=" + total
+            );
+            return;
+        }
+
+        List<AdapterProxySource> orderedSources =
+                submittedRun.orderedSources;
+        List<?> submittedRunRenderInfos =
+                submittedRun.renderInfos;
+
+        int sourcedRows = orderedSources.size();
         int proxyRows = 0;
 
-        for (Object item : rawList) {
+        for (Object item : submittedRunRenderInfos) {
             if (isAdapterProxyRenderInfo(item, false)) {
                 proxyRows++;
             }
         }
 
-        List<AdapterProxySource> orderedSources =
-                findLatestAdapterProxySourceBatch(
-                        owner,
-                        total
-                );
-
-        int sourcedRows = orderedSources.size();
-
-        if (total >= 6 && adapterProxyAttemptLogCount < 60) {
+        if (total > 0 && adapterProxyAttemptLogCount < 60) {
             adapterProxyAttemptLogCount++;
 
             Log.d(TAG, "PreSubmitEntry"
@@ -6756,10 +7617,153 @@ public final class PinPlaylistPatch {
          * exclude recommendation shelves while still catching the active B/S
          * insertion paths.
          */
-        if (proxyRows < 6 || sourcedRows < 6) return;
+        if (proxyRows <= 0) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedNoProxyRows"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+                            + " proxyRows=" + proxyRows
+                            + " sourcedRows=" + sourcedRows
+            );
+            return;
+        }
+
+        if (sourcedRows != submittedRunRenderInfos.size()) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedIncompleteSourceBatch"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+                            + " proxyRows=" + proxyRows
+                            + " sourcedRows=" + sourcedRows
+            );
+            return;
+        }
+
+        if (!hasExactAdapterProxyRenderInfoIdentities(
+                orderedSources,
+                submittedRunRenderInfos
+        )) {
+            for (int position = 0;
+                 position < sourcedRows;
+                 position++) {
+            AdapterProxySource source = orderedSources.get(position);
+            Object submittedRenderInfo = source == null
+                    ? null
+                    : submittedRunRenderInfos.get(position);
+            if (source == null
+                    || source.renderInfo != submittedRenderInfo) {
+                logAdapterProxyTransactionDiagnostic(
+                        "event=prepareAdapterProxyRenderInfos.rejected"
+                                + " reason=rejectedRenderInfoIdentityMismatch"
+                                + " ownerIdentity="
+                                + identityString(owner)
+                                + " generation="
+                                + transaction.generation
+                                + " position=" + position
+                                + " capturedType="
+                                + objectTypeName(
+                                source == null
+                                        ? null
+                                        : source.renderInfo
+                        )
+                                + " capturedIdentity="
+                                + identityString(
+                                source == null
+                                        ? null
+                                        : source.renderInfo
+                        )
+                                + " submittedType="
+                                + objectTypeName(submittedRenderInfo)
+                                + " submittedIdentity="
+                                + identityString(submittedRenderInfo)
+                );
+                return;
+            }
+        }
+            return;
+        }
+
+        if (transaction.controller != null) {
+            synchronized (adapterProxyControllers) {
+                Object previous = adapterProxyControllers.get(owner);
+                if (previous != null
+                        && previous != transaction.controller) {
+                    adapterProxyControllers.remove(owner);
+                    logAdapterProxyTransactionDiagnostic(
+                            "event=prepareAdapterProxyRenderInfos.rejected"
+                                    + " reason=rejectedControllerConflict"
+                                    + " ownerIdentity="
+                                    + identityString(owner)
+                                    + " previousControllerType="
+                                    + objectTypeName(previous)
+                                    + " previousControllerIdentity="
+                                    + identityString(previous)
+                                    + " controllerType="
+                                    + objectTypeName(
+                                    transaction.controller
+                            )
+                                    + " controllerIdentity="
+                                    + identityString(
+                                    transaction.controller
+                            )
+                                    + " generation="
+                                    + transaction.generation
+                    );
+                    return;
+                }
+                adapterProxyControllers.put(
+                        owner,
+                        transaction.controller
+                );
+                logAdapterProxyTransactionDiagnostic(
+                        "event=prepareAdapterProxyRenderInfos.relationshipRecorded"
+                                + " ownerIdentity="
+                                + identityString(owner)
+                                + " controllerType="
+                                + objectTypeName(transaction.controller)
+                                + " controllerIdentity="
+                                + identityString(
+                                transaction.controller
+                        )
+                                + " generation="
+                                + transaction.generation
+                );
+            }
+        }
+
+        if (!hasAnyPinsFast()) {
+            Log.d(TAG, "AdapterProxyRelationshipDiscovered"
+                    + " ownerIdentity=" + identityString(owner)
+                    + " controllerIdentity="
+                    + identityString(transaction.controller)
+                    + " generation=" + transaction.generation
+                    + " total=" + total);
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedNoPins"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " controllerIdentity="
+                            + identityString(transaction.controller)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+            );
+            return;
+        }
 
         Context context = resolveApplicationContext();
-        if (context == null) return;
+        if (context == null) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedMissingContext"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+            );
+            return;
+        }
 
         List<String> pinOrder =
                 new ArrayList<>(PinStore.getPinnedIds(context));
@@ -6768,15 +7772,53 @@ public final class PinPlaylistPatch {
                     owner,
                     "noPins"
             );
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedEmptyPinOrder"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+            );
             return;
         }
 
-        AdapterProxyMapping mapping =
-                chooseAdapterProxyDirectSourceMapping(
+        List<PinPlaylistCompatibilityCandidate> candidates =
+                new ArrayList<>();
+
+        PinPlaylistCompatibilityCandidate adapterCandidate =
+                ADAPTER_PROXY_DIRECT_SOURCE_STRATEGY.discover(
                         orderedSources,
-                        rawList,
+                        submittedRunRenderInfos,
                         context,
                         pinOrder
+                );
+
+        logAdapterProxyTransactionDiagnostic(
+                "event=prepareAdapterProxyRenderInfos.positionMapCandidate"
+                        + " accepted="
+                        + (adapterCandidate != null)
+                        + " ownerIdentity=" + identityString(owner)
+                        + " generation=" + transaction.generation
+                        + " listSize=" + total
+                        + " pinCount=" + pinOrder.size()
+                        + " mappedRows="
+                        + (adapterCandidate == null
+                        ? 0
+                        : adapterCandidate.idsByListPosition.size())
+                        + " ambiguous="
+                        + (adapterCandidate != null
+                        && adapterCandidate.ambiguous)
+        );
+
+        if (adapterCandidate != null) {
+            candidates.add(adapterCandidate);
+        }
+
+        PinPlaylistCompatibilityCandidate mapping =
+                CompatibilityCandidateSelector.selectBest(
+                        sourcedRows,
+                        1,
+                        candidates
                 );
 
         if (adapterProxyAttemptLogCount < 100) {
@@ -6788,7 +7830,8 @@ public final class PinPlaylistPatch {
                     + " sourcedRows=" + sourcedRows
                     + " expectedPlaylistRows="
                     + lastKnownLibraryPlaylistCount
-                    + " strategy=orderedDirectSource"
+                    + " strategy="
+                    + ADAPTER_PROXY_DIRECT_SOURCE_STRATEGY.name()
                     + " selectedPath="
                     + (mapping == null ? null : mapping.path)
                     + " offset="
@@ -6805,14 +7848,39 @@ public final class PinPlaylistPatch {
         }
 
         if (mapping == null
-                || mapping.ambiguous
-                || mapping.idsByListPosition.size() < 6) {
+                || !mapping.isUsable(sourcedRows, 1)) {
             clearAdapterPositionRemapForOwner(
                     owner,
                     "mappingUnavailable"
             );
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedPositionMapCandidate"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+                            + " candidateCount=" + candidates.size()
+                            + " mappingPresent=" + (mapping != null)
+                            + " mappedRows="
+                            + (mapping == null
+                            ? 0
+                            : mapping.idsByListPosition.size())
+                            + " ambiguous="
+                            + (mapping != null && mapping.ambiguous)
+            );
             return;
         }
+
+        logAdapterProxyTransactionDiagnostic(
+                "event=prepareAdapterProxyRenderInfos.positionMapCandidateAccepted"
+                        + " ownerIdentity=" + identityString(owner)
+                        + " generation=" + transaction.generation
+                        + " listSize=" + total
+                        + " candidateCount=" + candidates.size()
+                        + " mappedRows="
+                        + mapping.idsByListPosition.size()
+                        + " ambiguous=" + mapping.ambiguous
+        );
 
         LinkedHashMap<String, Object> rawItemById =
                 new LinkedHashMap<>();
@@ -6826,7 +7894,7 @@ public final class PinPlaylistPatch {
             String playlistId = entry.getValue();
 
             if (position < 0
-                    || position >= rawList.size()
+                    || position >= submittedRunRenderInfos.size()
                     || position >= orderedSources.size()) {
                 continue;
             }
@@ -6840,7 +7908,10 @@ public final class PinPlaylistPatch {
                 continue;
             }
 
-            rawItemById.put(playlistId, rawList.get(position));
+            rawItemById.put(
+                    playlistId,
+                    submittedRunRenderInfos.get(position)
+            );
             sourceItemById.put(
                     playlistId,
                     source.sourceObject
@@ -6863,7 +7934,19 @@ public final class PinPlaylistPatch {
             pinnedPresent.add(pinnedId);
         }
 
-        if (pinnedPresent.isEmpty()) return;
+        if (pinnedPresent.isEmpty()) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedNoPinnedRowsPresent"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+                            + " pinCount=" + pinOrder.size()
+                            + " playlistSlotCount="
+                            + playlistSlots.size()
+            );
+            return;
+        }
 
         for (int position : playlistSlots) {
             String playlistId =
@@ -6888,6 +7971,43 @@ public final class PinPlaylistPatch {
                     + " slots=" + playlistSlots
                     + " desired=" + desiredSourceItems.size()
                     + " mapping=" + mapping.idsByListPosition);
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedIncompleteDesiredOrder"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " generation=" + transaction.generation
+                            + " listSize=" + total
+                            + " playlistSlotCount="
+                            + playlistSlots.size()
+                            + " desiredSourceCount="
+                            + desiredSourceItems.size()
+                            + " pinnedPresentCount="
+                            + pinnedPresent.size()
+            );
+            return;
+        }
+
+        List<Integer> absolutePlaylistSlots =
+                translateAdapterProxySubmittedRunSlotsToAbsoluteSourceIndices(
+                        submittedRun,
+                        playlistSlots
+                );
+
+        if (absolutePlaylistSlots == null) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.rejected"
+                            + " reason=rejectedAbsoluteSlotTranslation"
+                            + " ownerIdentity="
+                            + identityString(owner)
+                            + " generation="
+                            + transaction.generation
+                            + " listSize=" + total
+                            + " submittedRunSize=" + sourcedRows
+                            + " sourceCount="
+                            + submittedRun.sourceCount
+                            + " relativePlaylistSlots="
+                            + playlistSlots
+            );
             return;
         }
 
@@ -6895,9 +8015,50 @@ public final class PinPlaylistPatch {
                 installAdapterPositionRemap(
                         owner,
                         orderedSources,
-                        playlistSlots,
+                        absolutePlaylistSlots,
                         desiredSourceItems
                 );
+
+        logAdapterProxyTransactionDiagnostic(
+                "event=prepareAdapterProxyRenderInfos.positionMapCandidateResult"
+                        + " accepted=" + positionRemapInstalled
+                        + " ownerIdentity=" + identityString(owner)
+                        + " generation=" + transaction.generation
+                        + " listSize=" + total
+                        + " playlistSlotCount="
+                        + playlistSlots.size()
+                        + " activeOwnerIdentity="
+                        + identityString(
+                        activeAdapterProxyFactoryOwner
+                )
+                        + " activeVisualAdapterType="
+                        + objectTypeName(
+                        activeAdapterProxyFactoryVisualAdapter
+                )
+                        + " activeVisualAdapterIdentity="
+                        + identityString(
+                        activeAdapterProxyFactoryVisualAdapter
+                )
+        );
+
+        if (positionRemapInstalled) {
+            logAdapterProxyTransactionDiagnostic(
+                    "event=prepareAdapterProxyRenderInfos.activeStateInstalled"
+                            + " ownerIdentity=" + identityString(owner)
+                            + " activeOwnerIdentity="
+                            + identityString(
+                            activeAdapterProxyFactoryOwner
+                    )
+                            + " visualAdapterType="
+                            + objectTypeName(
+                            activeAdapterProxyFactoryVisualAdapter
+                    )
+                            + " visualAdapterIdentity="
+                            + identityString(
+                            activeAdapterProxyFactoryVisualAdapter
+                    )
+            );
+        }
 
         /*
          * All delegated playlist entries share the same Lhyi instance, so
@@ -6946,6 +8107,495 @@ public final class PinPlaylistPatch {
             List<Integer> playlistSlots,
             List<Object> desiredSourceItems
     ) {
+        AdapterPositionRemapRollbackSnapshot rollback =
+                new AdapterPositionRemapRollbackSnapshot();
+
+        try {
+            boolean installed = installAdapterPositionRemapInternal(
+                    owner,
+                    orderedSources,
+                    playlistSlots,
+                    desiredSourceItems
+            );
+
+            if (!installed) {
+                rollback.restore();
+            }
+
+            return installed;
+        } catch (Throwable error) {
+            rollback.restore();
+            Log.d(TAG, "PreSubmitPositionMapRolledBack"
+                    + " ownerType=" + objectTypeName(owner)
+                    + " error=" + error.getClass().getName());
+            return false;
+        }
+    }
+
+    @Nullable
+    private static List<Integer>
+    translateAdapterProxySubmittedRunSlotsToAbsoluteSourceIndices(
+            AdapterProxySubmittedRun run,
+            List<Integer> relativeSlots
+    ) {
+        if (run == null
+                || relativeSlots == null
+                || relativeSlots.isEmpty()
+                || run.sourceCount <= 0
+                || run.orderedSources == null
+                || run.orderedSources.isEmpty()
+                || run.sourcesByIndex == null
+                || run.sourcesByIndex.size()
+                != run.orderedSources.size()) {
+            return null;
+        }
+
+        ArrayList<Integer> absoluteSourceIndices =
+                new ArrayList<>();
+        Set<Integer> seenRelativeSlots =
+                new LinkedHashSet<>();
+        Set<Integer> seenAbsoluteSourceIndices =
+                new LinkedHashSet<>();
+
+        for (Integer relativeSlotObject : relativeSlots) {
+            if (relativeSlotObject == null) {
+                return null;
+            }
+
+            int relativeSlot = relativeSlotObject;
+
+            if (relativeSlot < 0
+                    || relativeSlot
+                    >= run.orderedSources.size()
+                    || !seenRelativeSlots.add(relativeSlot)) {
+                return null;
+            }
+
+            AdapterProxySource source =
+                    run.orderedSources.get(relativeSlot);
+
+            if (source == null
+                    || source.sourceIndex < 0
+                    || source.sourceIndex >= run.sourceCount
+                    || run.sourcesByIndex.get(
+                    source.sourceIndex
+            ) != source
+                    || !seenAbsoluteSourceIndices.add(
+                    source.sourceIndex
+            )) {
+                return null;
+            }
+
+            absoluteSourceIndices.add(
+                    source.sourceIndex
+            );
+        }
+
+        return Collections.unmodifiableList(
+                absoluteSourceIndices
+        );
+    }
+    @Nullable
+    private static int[]
+    buildAdapterProxyPositionMapFromSubmittedSources(
+            List<AdapterProxySource> orderedSources,
+            List<Integer> playlistSlots,
+            List<Object> desiredSourceItems
+    ) {
+        if (orderedSources == null
+                || orderedSources.isEmpty()
+                || playlistSlots == null
+                || desiredSourceItems == null
+                || playlistSlots.size()
+                != desiredSourceItems.size()) {
+            return null;
+        }
+
+        AdapterProxySource firstSource =
+                orderedSources.get(0);
+        AdapterProxySource latestSource =
+                orderedSources.get(
+                        orderedSources.size() - 1
+                );
+
+        if (firstSource == null
+                || latestSource == null
+                || firstSource.owner == null
+                || firstSource.sourceAdapter == null
+                || firstSource.generation <= 0L
+                || latestSource.sourceCount == null
+                || latestSource.sourceCount <= 0) {
+            return null;
+        }
+
+        Object exactOwner = firstSource.owner;
+        Object exactSourceAdapter =
+                firstSource.sourceAdapter;
+        long exactGeneration =
+                firstSource.generation;
+        int sourceCount =
+                latestSource.sourceCount;
+
+        IdentityHashMap<Object, Integer>
+                sourcePositionByItem =
+                new IdentityHashMap<>();
+        Set<Integer> capturedSourceIndices =
+                new LinkedHashSet<>();
+
+        int previousSourceIndex = -1;
+        Integer previousSourceCount = null;
+
+        for (AdapterProxySource source : orderedSources) {
+            if (source == null
+                    || source.owner != exactOwner
+                    || source.generation != exactGeneration
+                    || source.sourceAdapter
+                    != exactSourceAdapter
+                    || source.sourceCount == null
+                    || source.sourceCount <= 0
+                    || source.sourceCount > sourceCount
+                    || source.sourceIndex < 0
+                    || source.sourceIndex
+                    >= source.sourceCount
+                    || source.sourceObject == null) {
+                return null;
+            }
+
+            if (previousSourceIndex >= 0
+                    && source.sourceIndex
+                    != previousSourceIndex + 1) {
+                return null;
+            }
+
+            if (previousSourceCount != null
+                    && source.sourceCount
+                    < previousSourceCount) {
+                return null;
+            }
+
+            if (!capturedSourceIndices.add(
+                    source.sourceIndex
+            )) {
+                return null;
+            }
+
+            if (sourcePositionByItem.containsKey(
+                    source.sourceObject
+            )) {
+                return null;
+            }
+
+            sourcePositionByItem.put(
+                    source.sourceObject,
+                    source.sourceIndex
+            );
+
+            previousSourceIndex = source.sourceIndex;
+            previousSourceCount = source.sourceCount;
+        }
+
+        int[] visualToSource =
+                new int[sourceCount];
+
+        for (int position = 0;
+             position < sourceCount;
+             position++) {
+            visualToSource[position] = position;
+        }
+
+        Set<Integer> assignedVisualPositions =
+                new LinkedHashSet<>();
+        Set<Integer> assignedSourcePositions =
+                new LinkedHashSet<>();
+
+        for (int index = 0;
+             index < playlistSlots.size();
+             index++) {
+            Integer visualPositionObject =
+                    playlistSlots.get(index);
+            Object desiredSourceItem =
+                    desiredSourceItems.get(index);
+            Integer sourcePosition =
+                    sourcePositionByItem.get(
+                            desiredSourceItem
+                    );
+
+            if (visualPositionObject == null
+                    || sourcePosition == null) {
+                return null;
+            }
+
+            int visualPosition =
+                    visualPositionObject;
+
+            if (visualPosition < 0
+                    || visualPosition >= sourceCount
+                    || sourcePosition < 0
+                    || sourcePosition >= sourceCount
+                    || !capturedSourceIndices.contains(
+                    visualPosition
+            )
+                    || !assignedVisualPositions.add(
+                    visualPosition
+            )
+                    || !assignedSourcePositions.add(
+                    sourcePosition
+            )) {
+                return null;
+            }
+
+            visualToSource[visualPosition] =
+                    sourcePosition;
+        }
+
+        if (!PinPlaylistCompatibilityInvariants
+                .isCompletePermutation(
+                        sourceCount,
+                        visualToSource
+                )) {
+            return null;
+        }
+
+        return visualToSource;
+    }
+    private static boolean installAdapterPositionMapAndReportChange(
+            Object visualAdapter,
+            int[] desiredPositionMap
+    ) {
+        if (visualAdapter == null
+                || desiredPositionMap == null
+                || desiredPositionMap.length <= 0
+                || !PinPlaylistCompatibilityInvariants
+                .isCompletePermutation(
+                        desiredPositionMap.length,
+                        desiredPositionMap
+                )) {
+            return false;
+        }
+
+        int[] storedPositionMap =
+                desiredPositionMap.clone();
+
+        boolean identity = true;
+
+        for (int position = 0;
+             position < storedPositionMap.length;
+             position++) {
+            if (storedPositionMap[position] != position) {
+                identity = false;
+                break;
+            }
+        }
+
+        boolean refreshRequired;
+
+        synchronized (adapterVisualToSourcePositions) {
+            int[] previousPositionMap =
+                    adapterVisualToSourcePositions.get(
+                            visualAdapter
+                    );
+
+            refreshRequired =
+                    previousPositionMap == null
+                            ? !identity
+                            : !java.util.Arrays.equals(
+                                    previousPositionMap,
+                                    storedPositionMap
+                            );
+
+            /*
+             * A completed submission supersedes stale adapter instances.
+             * Store a private copy so callers cannot mutate the installed
+             * permutation after validation.
+             */
+            adapterVisualToSourcePositions.clear();
+            adapterVisualToSourcePositions.put(
+                    visualAdapter,
+                    storedPositionMap
+            );
+        }
+
+        return refreshRequired;
+    }
+    private static boolean installAdapterPositionMapsAndRefreshIfChanged(
+            Object owner,
+            Object visualAdapter,
+            int[] desiredPositionMap
+    ) {
+        if (owner == null
+                || visualAdapter == null
+                || desiredPositionMap == null
+                || desiredPositionMap.length <= 0
+                || !PinPlaylistCompatibilityInvariants
+                .isCompletePermutation(
+                        desiredPositionMap.length,
+                        desiredPositionMap
+                )) {
+            return false;
+        }
+
+        int[] storedOwnerPositionMap =
+                desiredPositionMap.clone();
+
+        int[] previousOwnerPositionMap;
+        Integer previousSourceCount;
+
+        synchronized (adapterProxyFactoryVisualToSource) {
+            int[] existingOwnerPositionMap =
+                    adapterProxyFactoryVisualToSource.get(owner);
+
+            previousOwnerPositionMap =
+                    existingOwnerPositionMap == null
+                            ? null
+                            : existingOwnerPositionMap.clone();
+
+            previousSourceCount =
+                    adapterProxyFactorySourceCounts.get(owner);
+
+            /*
+             * Publish the owner-side map before adapter notifications. A
+             * synchronous refresh may immediately re-enter the source-position
+             * hook, which must observe the same completed permutation.
+             */
+            adapterProxyFactoryVisualToSource.put(
+                    owner,
+                    storedOwnerPositionMap
+            );
+
+            adapterProxyFactorySourceCounts.put(
+                    owner,
+                    storedOwnerPositionMap.length
+            );
+        }
+
+        boolean adapterPositionMapInstalled =
+                installAdapterPositionMapAndRefreshIfChanged(
+                        visualAdapter,
+                        desiredPositionMap
+                );
+
+        if (!adapterPositionMapInstalled) {
+            synchronized (adapterProxyFactoryVisualToSource) {
+                if (previousOwnerPositionMap == null) {
+                    adapterProxyFactoryVisualToSource.remove(owner);
+                } else {
+                    adapterProxyFactoryVisualToSource.put(
+                            owner,
+                            previousOwnerPositionMap
+                    );
+                }
+
+                if (previousSourceCount == null) {
+                    adapterProxyFactorySourceCounts.remove(owner);
+                } else {
+                    adapterProxyFactorySourceCounts.put(
+                            owner,
+                            previousSourceCount
+                    );
+                }
+            }
+        }
+
+        return adapterPositionMapInstalled;
+    }
+    private static boolean installAdapterPositionMapAndRefreshIfChanged(
+            Object visualAdapter,
+            int[] desiredPositionMap
+    ) {
+        if (visualAdapter == null
+                || desiredPositionMap == null
+                || desiredPositionMap.length <= 0
+                || !PinPlaylistCompatibilityInvariants
+                .isCompletePermutation(
+                        desiredPositionMap.length,
+                        desiredPositionMap
+                )) {
+            return false;
+        }
+
+        /*
+         * Remove maps belonging to obsolete adapter instances while retaining
+         * the current adapter's previous permutation as the transition origin.
+         */
+        synchronized (adapterVisualToSourcePositions) {
+            int[] previousPositionMap =
+                    adapterVisualToSourcePositions.get(
+                            visualAdapter
+                    );
+
+            adapterVisualToSourcePositions.clear();
+
+            if (previousPositionMap != null) {
+                adapterVisualToSourcePositions.put(
+                        visualAdapter,
+                        java.util.Arrays.copyOf(
+                                previousPositionMap,
+                                previousPositionMap.length
+                        )
+                );
+            }
+        }
+
+        /*
+         * Reuse the generic pathway already used after pin changes. It installs
+         * each intermediate permutation before notifying, and performs a full
+         * refresh fallback when no compatible move notification is available.
+         */
+        String notifications =
+                installAdapterPermutation(
+                        visualAdapter,
+                        desiredPositionMap
+                );
+
+        boolean refreshRequired =
+                !"unchanged".equals(notifications);
+
+        boolean finalFullNotify = false;
+
+        if (refreshRequired) {
+            /*
+             * The fallback refresh publishes the completed permutation.
+             * A final rebind then makes all visible holders consume that map.
+             */
+            finalFullNotify =
+                    invokeAdapterFullRefresh(visualAdapter);
+        }
+
+        boolean fallbackFullNotify =
+                notifications != null
+                        && notifications.contains(
+                                "fallbackFullNotify=true"
+                        );
+
+        boolean refreshApplied =
+                fallbackFullNotify || finalFullNotify;
+
+        Log.d(TAG, "AdapterPositionMapRefresh"
+                + " adapterType="
+                + objectTypeName(visualAdapter)
+                + " adapterIdentity="
+                + identityString(visualAdapter)
+                + " refreshRequired="
+                + refreshRequired
+                + " refreshApplied="
+                + refreshApplied
+                + " notifications="
+                + notifications
+                + " finalFullNotify="
+                + finalFullNotify
+                + " positionMap="
+                + java.util.Arrays.toString(
+                        desiredPositionMap
+                ));
+
+        return true;
+    }
+    private static boolean installAdapterPositionRemapInternal(
+            Object owner,
+            List<AdapterProxySource> orderedSources,
+            List<Integer> playlistSlots,
+            List<Object> desiredSourceItems
+    ) {
         Object visualAdapter = findAdapterProxyVisualAdapter(owner);
         Object sourceAdapter = getAdapterProxySourceAdapter(owner);
 
@@ -6961,95 +8611,52 @@ public final class PinPlaylistPatch {
             return false;
         }
 
-        int total = orderedSources.size();
-        if (total <= 0
-                || playlistSlots.size()
-                != desiredSourceItems.size()) {
+        int[] visualToSource =
+                buildAdapterProxyPositionMapFromSubmittedSources(
+                        orderedSources,
+                        playlistSlots,
+                        desiredSourceItems
+                );
+
+        if (visualToSource == null) {
+            Log.d(TAG, "PreSubmitPositionMapSkipped"
+                    + " reason=invalidSubmittedPositionMap"
+                    + " capturedSourceCount="
+                    + (orderedSources == null
+                    ? 0
+                    : orderedSources.size())
+                    + " playlistSlotCount="
+                    + (playlistSlots == null
+                    ? 0
+                    : playlistSlots.size()));
             return false;
         }
 
-        IdentityHashMap<Object, Integer> sourcePositionByItem =
-                new IdentityHashMap<>();
-
-        for (AdapterProxySource source : orderedSources) {
-            if (source == null
-                    || source.sourceObject == null
-                    || source.sourceIndex < 0
-                    || source.sourceIndex >= total) {
-                Log.d(TAG, "PreSubmitPositionMapSkipped"
-                        + " reason=invalidSourceFrame"
-                        + " total=" + total);
-                return false;
-            }
-
-            sourcePositionByItem.put(
-                    source.sourceObject,
-                    source.sourceIndex
-            );
-        }
-
-        int[] visualToSource = new int[total];
-        for (int position = 0; position < total; position++) {
-            visualToSource[position] = position;
-        }
-
-        for (int index = 0;
-             index < playlistSlots.size();
-             index++) {
-            int visualPosition = playlistSlots.get(index);
-            Object desiredSourceItem =
-                    desiredSourceItems.get(index);
-            Integer sourcePosition =
-                    sourcePositionByItem.get(desiredSourceItem);
-
-            if (visualPosition < 0
-                    || visualPosition >= total
-                    || sourcePosition == null
-                    || sourcePosition < 0
-                    || sourcePosition >= total) {
-                Log.d(TAG, "PreSubmitPositionMapSkipped"
-                        + " reason=unresolvedPosition"
-                        + " visualPosition=" + visualPosition
-                        + " sourcePosition=" + sourcePosition);
-                return false;
-            }
-
-            visualToSource[visualPosition] = sourcePosition;
-        }
-
-        boolean[] seen = new boolean[total];
-        for (int sourcePosition : visualToSource) {
-            if (sourcePosition < 0
-                    || sourcePosition >= total
-                    || seen[sourcePosition]) {
-                Log.d(TAG, "PreSubmitPositionMapSkipped"
-                        + " reason=notPermutation"
-                        + " visualToSource="
-                        + java.util.Arrays.toString(
-                        visualToSource
-                ));
-                return false;
-            }
-
-            seen[sourcePosition] = true;
-        }
-
-        synchronized (adapterVisualToSourcePositions) {
-            /*
-             * A newly completed Library submission supersedes older adapter
-             * instances. Keeping only the active map also prevents stale maps
-             * from affecting a later pin/unpin physical move.
-             */
-            adapterVisualToSourcePositions.clear();
-            adapterVisualToSourcePositions.put(
-                    visualAdapter,
-                    visualToSource
-            );
-        }
-
+        /*
+         * Publish the active relationship before requesting a refresh. Some
+         * adapter implementations may synchronously re-enter the position
+         * hooks while processing their full-refresh method.
+         */
         activeAdapterProxyFactoryOwner = owner;
         activeAdapterProxyFactoryVisualAdapter = visualAdapter;
         activeLibraryAdapter = visualAdapter;
+
+        boolean positionMapInstalled =
+                installAdapterPositionMapsAndRefreshIfChanged(
+                        owner,
+                        visualAdapter,
+                        visualToSource
+                );
+
+        if (!positionMapInstalled) {
+            Log.d(TAG, "PreSubmitPositionMapSkipped"
+                    + " reason=positionMapRefreshBoundaryRejected"
+                    + " ownerIdentity="
+                    + identityString(owner)
+                    + " visualAdapterIdentity="
+                    + identityString(visualAdapter));
+            return false;
+        }
 
         Log.d(TAG, "PreSubmitPositionMap"
                 + " installed=true"
@@ -8227,8 +9834,7 @@ public final class PinPlaylistPatch {
 
         if (sourceAdapter == null
                 || sourceCount == null
-                || sourceCount < 3
-                || sourceCount > 24) {
+                || sourceCount <= 0) {
             Log.d(TAG, "PinTogglePositionMapRefreshSkipped"
                     + " reason=invalidSource"
                     + " sourceAdapterType="
@@ -8392,7 +9998,7 @@ public final class PinPlaylistPatch {
 
         List<?> items = (List<?>) listObject;
         int total = items.size();
-        if (total < 10 || total > 18) return;
+        if (total <= 0) return;
 
         Context context = resolveApplicationContext();
         if (context == null) return;
@@ -8683,9 +10289,12 @@ public final class PinPlaylistPatch {
     private static List<AdapterProxySource>
     findLatestAdapterProxySourceBatch(
             Object owner,
-            int expectedSize
+            int expectedSize,
+            long expectedGeneration
     ) {
-        if (owner == null || expectedSize <= 0) {
+        if (owner == null
+                || expectedSize <= 0
+                || expectedGeneration <= 0L) {
             return Collections.emptyList();
         }
 
@@ -8713,6 +10322,8 @@ public final class PinPlaylistPatch {
                 int maxIndex = Integer.MIN_VALUE;
                 Set<Integer> seen = new LinkedHashSet<>();
                 boolean valid = true;
+                Object exactSourceAdapter = null;
+                Integer exactSourceCount = null;
 
                 for (int index = start; index < end; index++) {
                     AdapterProxySource source =
@@ -8720,9 +10331,25 @@ public final class PinPlaylistPatch {
 
                     if (source == null
                             || source.owner != owner
+                            || source.generation != expectedGeneration
+                            || source.sourceAdapter == null
+                            || source.sourceCount == null
+                            || source.sourceCount <= 0
+                            || source.sourceIndex >= source.sourceCount
+                            || source.sourceAdapter == source.sourceObject
                             || source.sourceObject == null
+                            || source.renderInfo == null
                             || now - source.completedAtMs > 5000L
                             || !seen.add(source.sourceIndex)) {
+                        valid = false;
+                        break;
+                    }
+
+                    if (exactSourceAdapter == null) {
+                        exactSourceAdapter = source.sourceAdapter;
+                        exactSourceCount = source.sourceCount;
+                    } else if (source.sourceAdapter != exactSourceAdapter
+                            || !source.sourceCount.equals(exactSourceCount)) {
                         valid = false;
                         break;
                     }
@@ -8803,8 +10430,6 @@ public final class PinPlaylistPatch {
                         + " renderInfoIdentities="
                         + renderInfoIdentities);
 
-                history.subList(0, end).clear();
-
                 return ordered;
             }
         }
@@ -8812,8 +10437,279 @@ public final class PinPlaylistPatch {
         return Collections.emptyList();
     }
 
+    private static List<AdapterProxySource>
+    findLatestSubmittedAdapterProxySourceRun(
+            Object owner,
+            long expectedGeneration,
+            AdapterProxySource latestSource
+    ) {
+        if (owner == null
+                || expectedGeneration <= 0L
+                || latestSource == null
+                || latestSource.owner != owner
+                || latestSource.generation != expectedGeneration
+                || !latestSource.submissionVerified) {
+            return Collections.emptyList();
+        }
+
+        synchronized (adapterProxySourceHistory) {
+            ArrayList<AdapterProxySource> history =
+                    adapterProxySourceHistory.get(owner);
+
+            if (history == null || history.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            int latestPosition = -1;
+
+            for (int index = history.size() - 1;
+                 index >= 0;
+                 index--) {
+                if (history.get(index) == latestSource) {
+                    latestPosition = index;
+                    break;
+                }
+            }
+
+            if (latestPosition < 0) {
+                return Collections.emptyList();
+            }
+
+            long now = SystemClock.uptimeMillis();
+            Object exactSourceAdapter = latestSource.sourceAdapter;
+            ArrayList<AdapterProxySource> reverseOrdered =
+                    new ArrayList<>();
+            AdapterProxySource laterSource = null;
+
+            for (int index = latestPosition;
+                 index >= 0;
+                 index--) {
+                AdapterProxySource source = history.get(index);
+
+                if (source == null
+                        || source.owner != owner
+                        || source.generation != expectedGeneration
+                        || source.sourceAdapter != exactSourceAdapter) {
+                    break;
+                }
+
+                if (!source.submissionVerified
+                        || source.sourceAdapter == null
+                        || source.sourceCount == null
+                        || source.sourceCount <= 0
+                        || source.sourceIndex < 0
+                        || source.sourceIndex >= source.sourceCount
+                        || source.sourceAdapter == source.sourceObject
+                        || source.sourceObject == null
+                        || source.renderInfo == null
+                        || now - source.completedAtMs > 5000L) {
+                    if (source == latestSource) {
+                        return Collections.emptyList();
+                    }
+                    break;
+                }
+
+                if (laterSource != null) {
+                    if (source.sourceIndex
+                            != laterSource.sourceIndex - 1) {
+                        break;
+                    }
+
+                    /*
+                     * A host may grow its structurally bounded source while
+                     * submitting rows incrementally. The bound may stay equal
+                     * or grow in forward source-index order, but it may never
+                     * shrink.
+                     */
+                    if (source.sourceCount
+                            > laterSource.sourceCount) {
+                        return Collections.emptyList();
+                    }
+                }
+
+                reverseOrdered.add(source);
+                laterSource = source;
+            }
+
+            Collections.reverse(reverseOrdered);
+            return reverseOrdered;
+        }
+    }
+    private static List<AdapterProxySource>
+    verifyAndFindLatestSubmittedAdapterProxySourceRun(
+            Object owner,
+            List<?> submitted,
+            long expectedGeneration
+    ) {
+        if (owner == null
+                || submitted == null
+                || submitted.isEmpty()
+                || expectedGeneration <= 0L) {
+            return Collections.emptyList();
+        }
+
+        List<AdapterProxySource> exactSubmittedSources =
+                findLatestAdapterProxySourceBatch(
+                        owner,
+                        submitted.size(),
+                        expectedGeneration
+                );
+
+        if (!hasExactAdapterProxyRenderInfoIdentities(
+                exactSubmittedSources,
+                submitted
+        )) {
+            return Collections.emptyList();
+        }
+
+        AdapterProxySource latestSource =
+                exactSubmittedSources.get(
+                        exactSubmittedSources.size() - 1
+                );
+
+        synchronized (adapterProxySourceHistory) {
+            for (AdapterProxySource source
+                    : exactSubmittedSources) {
+                if (source == null) {
+                    return Collections.emptyList();
+                }
+
+                source.submissionVerified = true;
+            }
+
+            return findLatestSubmittedAdapterProxySourceRun(
+                    owner,
+                    expectedGeneration,
+                    latestSource
+            );
+        }
+    }
     @Nullable
-    private static AdapterProxyMapping
+    private static AdapterProxySubmittedRun
+    verifyAndPrepareAdapterProxySubmittedRun(
+            Object owner,
+            List<?> submitted,
+            long expectedGeneration
+    ) {
+        List<AdapterProxySource> orderedSources =
+                verifyAndFindLatestSubmittedAdapterProxySourceRun(
+                        owner,
+                        submitted,
+                        expectedGeneration
+                );
+
+        if (orderedSources.isEmpty()) {
+            return null;
+        }
+
+        AdapterProxySource firstSource =
+                orderedSources.get(0);
+        AdapterProxySource latestSource =
+                orderedSources.get(
+                        orderedSources.size() - 1
+                );
+
+        if (firstSource == null
+                || latestSource == null
+                || firstSource.sourceAdapter == null
+                || latestSource.sourceCount == null
+                || latestSource.sourceCount <= 0) {
+            return null;
+        }
+
+        Object exactSourceAdapter =
+                firstSource.sourceAdapter;
+        int sourceCount =
+                latestSource.sourceCount;
+
+        ArrayList<Object> renderInfos =
+                new ArrayList<>();
+        LinkedHashMap<Integer, AdapterProxySource>
+                sourcesByIndex =
+                new LinkedHashMap<>();
+
+        int previousSourceIndex = -1;
+        Integer previousSourceCount = null;
+
+        for (AdapterProxySource source : orderedSources) {
+            if (source == null
+                    || source.owner != owner
+                    || source.generation != expectedGeneration
+                    || source.sourceAdapter
+                    != exactSourceAdapter
+                    || !source.submissionVerified
+                    || source.sourceCount == null
+                    || source.sourceCount <= 0
+                    || source.sourceCount > sourceCount
+                    || source.sourceIndex < 0
+                    || source.sourceIndex
+                    >= source.sourceCount
+                    || source.sourceObject == null
+                    || source.renderInfo == null
+                    || source.sourceAdapter
+                    == source.sourceObject) {
+                return null;
+            }
+
+            if (previousSourceIndex >= 0
+                    && source.sourceIndex
+                    != previousSourceIndex + 1) {
+                return null;
+            }
+
+            if (previousSourceCount != null
+                    && source.sourceCount
+                    < previousSourceCount) {
+                return null;
+            }
+
+            if (sourcesByIndex.put(
+                    source.sourceIndex,
+                    source
+            ) != null) {
+                return null;
+            }
+
+            renderInfos.add(source.renderInfo);
+            previousSourceIndex = source.sourceIndex;
+            previousSourceCount = source.sourceCount;
+        }
+
+        if (sourcesByIndex.size()
+                != orderedSources.size()
+                || renderInfos.size()
+                != orderedSources.size()) {
+            return null;
+        }
+
+        return new AdapterProxySubmittedRun(
+                sourceCount,
+                orderedSources,
+                renderInfos,
+                sourcesByIndex
+        );
+    }
+    private static boolean hasExactAdapterProxyRenderInfoIdentities(
+            List<AdapterProxySource> sources,
+            List<?> submitted
+    ) {
+        if (sources == null
+                || submitted == null
+                || sources.size() != submitted.size()) {
+            return false;
+        }
+        for (int index = 0; index < sources.size(); index++) {
+            AdapterProxySource source = sources.get(index);
+            if (source == null
+                    || source.renderInfo != submitted.get(index)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @Nullable
+    private static PinPlaylistCompatibilityCandidate
     chooseAdapterProxyDirectSourceMapping(
             List<AdapterProxySource> orderedSources,
             List<?> renderInfos,
@@ -8982,17 +10878,19 @@ public final class PinPlaylistPatch {
          * the exact number of playlist rows.
          */
         int requiredPlaylistRows =
-                expected >= 3
+                expected > 0
                         ? expected
                         : mapped.size();
 
         boolean enoughForFirstLoad =
-                expected < 3
-                        && mapped.size() >= 3
+                expected <= 0
+                        && !mapped.isEmpty()
+                        && canonicalMatches == mapped.size()
+                        && signatureMatches == 0
                         && !pinnedPresent.isEmpty();
 
         boolean completeKnownLibrary =
-                expected >= 3
+                expected > 0
                         && mapped.size() == expected
                         && distinctIds.size() == expected
                         && !pinnedPresent.isEmpty();
@@ -9028,7 +10926,7 @@ public final class PinPlaylistPatch {
                         + (canonicalMatches * 50)
                         + (pinnedPresent.size() * 100);
 
-        return new AdapterProxyMapping(
+        return new PinPlaylistCompatibilityCandidate(
                 "directSourceObject",
                 0,
                 score,
@@ -9194,6 +11092,18 @@ public final class PinPlaylistPatch {
             @Nullable Object holder,
             int position
     ) {
+        BOUND_ROW_IDENTITY_STRATEGY.begin(
+                adapter,
+                holder,
+                position
+        );
+    }
+
+    private static void beginBoundLibraryRowInternal(
+            @Nullable Object adapter,
+            @Nullable Object holder,
+            int position
+    ) {
         if (!deferredBindHookLogged) {
             deferredBindHookLogged = true;
             Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
@@ -9280,6 +11190,12 @@ public final class PinPlaylistPatch {
     }
 
     public static void finishBoundLibraryRow(
+            @Nullable Object holderOrView
+    ) {
+        BOUND_ROW_IDENTITY_STRATEGY.finish(holderOrView);
+    }
+
+    private static void finishBoundLibraryRowInternal(
             @Nullable Object holderOrView
     ) {
         if (holderOrView == null
@@ -10470,7 +12386,7 @@ public final class PinPlaylistPatch {
             expected = adapterExpectedPlaylistCount.get(adapter);
         }
 
-        if (expected == null || expected < 3) {
+        if (expected == null || expected <= 0) {
             return false;
         }
 
