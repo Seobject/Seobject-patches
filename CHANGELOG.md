@@ -1,3 +1,9 @@
+## [1.1.0-dev.22](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.21...v1.1.0-dev.22) (2026-08-26)
+
+### Bug Fixes
+
+* publish Morphe patches-bundle metadata ([c463bc7](https://github.com/Seobject/Seobject-patches/commit/c463bc776e435b1a0b7b6128b6d0b9b262808675))
+
 ## [1.1.0-dev.21](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.20...v1.1.0-dev.21) (2026-08-26)
 
 ### Features
