@@ -18,10 +18,9 @@ Random QoL patches
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |---|---|---|
-| **Bunny** | Integrates the Bunny mod client into Discord. | None |
+| **Bunny** | Revives the Bunny Discord client mod without Xposed or LSPosed. | None |
 
 </details>
-
 <details>
 <summary>📦 YouTube Music&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
 <br>
@@ -34,15 +33,6 @@ Random QoL patches
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |---|---|---|
 | **Pin playlists** | Replaces Speed Dial pinning with persistent Library playlist pinning. | None |
-
-</details>
-<details>
-<summary>Discord&nbsp;&nbsp;&bull;&nbsp;&nbsp;1 patch</summary>
-<br>
-
-| Patch | Description | Options |
-|---|---|---|
-| **Bunny** | Revives the Bunny Discord client mod without Xposed or LSPosed. | None |
 
 </details>
 
