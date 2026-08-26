@@ -202,6 +202,7 @@ module.exports = {
     const channel = branch.name === "main" ? "stable" : "dev";
     const manifestFiles = [
       "patch-bundle.json",
+      "patches-bundle.json",
       `seobjects-random-patches-${channel}.json`,
     ];
 
