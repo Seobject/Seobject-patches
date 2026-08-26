@@ -4564,33 +4564,8 @@ val pinPlaylistPatch = bytecodePatch(
                 PlaylistNativeMenuRowFactoryFingerprint
             }
 
-        println(
-            "PIN_FINGERPRINT_RESOLVED|" +
-                "PlaylistMenuItemPresenterClassFingerprint|" +
-                menuItemPresenterFingerprint.classDef.type
-        )
-        println(
-            "PIN_FINGERPRINT_RESOLVED|" +
-                "PlaylistLithoAdapterBindFingerprint|" +
-                methodDescriptor(libraryAdapterBindFingerprint.method)
-        )
 
 
-        println(
-            "PIN_FINGERPRINT_RESOLVED|" +
-                "PlaylistAdapterProxyRenderInfoFingerprint|" +
-                methodDescriptor(adapterProxyRenderInfoFingerprint.method)
-        )
-        println(
-            "PIN_FINGERPRINT_RESOLVED|" +
-                "PlaylistFlyoutSourceFingerprint|" +
-                methodDescriptor(playlistFlyoutSourceFingerprint.method)
-        )
-        println(
-            "PIN_FINGERPRINT_RESOLVED|" +
-                "PlaylistNativeMenuRowFactoryFingerprint|" +
-                methodDescriptor(nativeMenuRowFactoryFingerprint.method)
-        )
 
 
         /*
@@ -5178,14 +5153,6 @@ val pinPlaylistPatch = bytecodePatch(
             }
         } else emptyMap()
         if (itemConverterCountProof != null) {
-            println(
-                "PIN_STRUCTURAL_COUNT_PROOF|receiver=" +
-                    itemConverterCountProof.sourceAdapterIdentity +
-                    "|producer=" + itemConverterCountProof.methodDescriptor +
-                    "|host=" + itemConverterCountProof.producerHostDescriptor +
-                    "|invokeIndex=" + itemConverterCountProof.producerIndex +
-                    "|boundIndex=" + itemConverterCountProof.boundIndex
-            )
         }
 
         val candidateMutationHostPlans:
@@ -5560,30 +5527,6 @@ val pinPlaylistPatch = bytecodePatch(
 
         val resolvedMutationHostDescriptors =
             patchedMutationHostDescriptors.sorted()
-        println(
-            "PIN_FINGERPRINT_RESOLVED|" +
-                "PlaylistAdapterProxyMutationHostFingerprint|" +
-                resolvedMutationHostDescriptors.joinToString("||")
-        )
-        println(
-            "PIN_HOOK_EXPECTED|captureAdapterProxyRenderInfo|" +
-                renderInfoReturnSites.size
-        )
-        println(
-            "PIN_HOOK_EXPECTED|beginAdapterProxyReplaceAll|" +
-                mutationHookCount
-	)
-        println(
-            "PIN_HOOK_EXPECTED|prepareAdapterProxyRenderInfos|" +
-                mutationHookCount
-        )
-        println(
-            "PIN_HOOK_EXPECTED|remapActiveAdapterProxySourcePosition|" +
-                expectedRemapHookCount(
-                    isPositionRenderInfoFactory,
-                    converterSourceSitesByHost.values.sumOf { sites -> sites.size },
-                )
-        )
 
         /*
          * AdapterProxy rows all share one render-info object. Reorder them

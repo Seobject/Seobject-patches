@@ -1,6 +1,8 @@
 package app.morphe.extension.music.patches.pinplaylist;
 
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.preference.Preference;
 import android.preference.PreferenceFragment;
@@ -9,7 +11,6 @@ import android.preference.PreferenceManager;
 import android.preference.PreferenceScreen;
 import android.preference.SwitchPreference;
 
-import app.morphe.extension.shared.settings.preference.AbstractPreferenceFragment;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -250,7 +251,7 @@ public final class PinPlaylistSettings {
                     .putBoolean(key, (Boolean) newValue)
                     .apply();
 
-            AbstractPreferenceFragment.showRestartDialog(context);
+            showRestartDialog(context);
 
             // Runtime remains cached until the app process restarts.
             return true;
@@ -367,6 +368,42 @@ public final class PinPlaylistSettings {
         }
     }
 
+    /**
+     * Shows the restart prompt required after changing the process-cached
+     * Pin playlists feature state.
+     *
+     * Kept local so Pin playlists does not depend on Morphe's complete shared
+     * settings framework merely for restart UI.
+     */
+    private static void showRestartDialog(Context context) {
+        if (context == null) return;
+
+        new AlertDialog.Builder(context)
+                .setTitle("Restart required")
+                .setMessage("Restart YouTube Music to apply this change.")
+                .setNegativeButton("Later", null)
+                .setPositiveButton(
+                        "Restart",
+                        (dialog, which) -> restartApp(context)
+                )
+                .show();
+    }
+
+    private static void restartApp(Context context) {
+        Intent launchIntent =
+                context.getPackageManager()
+                        .getLaunchIntentForPackage(context.getPackageName());
+
+        if (launchIntent != null) {
+            launchIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK |
+                    Intent.FLAG_ACTIVITY_CLEAR_TASK
+            );
+            context.startActivity(launchIntent);
+        }
+
+        android.os.Process.killProcess(android.os.Process.myPid());
+    }
     private PinPlaylistSettings() {
     }
 }

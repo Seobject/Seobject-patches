@@ -5,7 +5,22 @@ Random QoL patches
 ## 🩹 Patches list
 
 <!-- PATCHES_START -->
-> **[v1.1.0-dev.20](https://github.com/Seobject/Seobject-patches/releases/tag/v1.1.0-dev.20)**&nbsp;&nbsp;&bull;&nbsp;&nbsp;1 patch total
+> **[v1.1.0-dev.20](https://github.com/Seobject/Seobject-patches/releases/tag/v1.1.0-dev.20)**&nbsp;&nbsp;&bull;&nbsp;&nbsp;2 patches total
+
+<details>
+<summary>📦 Discord&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
+<br>
+
+**🎯 Supported Discord versions:**
+
+| 341.13 |
+| :---: |
+
+| 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
+|---|---|---|
+| **Bunny** | Integrates the Bunny mod client into Discord. | None |
+
+</details>
 
 <details>
 <summary>📦 YouTube Music&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
@@ -19,6 +34,15 @@ Random QoL patches
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |---|---|---|
 | **Pin playlists** | Replaces Speed Dial pinning with persistent Library playlist pinning. | None |
+
+</details>
+<details>
+<summary>Discord&nbsp;&nbsp;&bull;&nbsp;&nbsp;1 patch</summary>
+<br>
+
+| Patch | Description | Options |
+|---|---|---|
+| **Bunny** | Revives the Bunny Discord client mod without Xposed or LSPosed. | None |
 
 </details>
 

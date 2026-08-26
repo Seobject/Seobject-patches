@@ -263,7 +263,6 @@ public final class PinPlaylistPatch {
                     count,
                     count + 1
             )) {
-                Log.d(TAG, "AdapterProxyTransactionDiagnostic " + details);
                 return;
             }
         }
@@ -675,10 +674,6 @@ public final class PinPlaylistPatch {
 
                 if (candidate.score == best.score
                         && !hasEquivalentEvidence(best, candidate)) {
-                    Log.d(TAG, "CompatibilityCandidateTieRejected"
-                            + " firstPath=" + best.path
-                            + " secondPath=" + candidate.path
-                            + " score=" + candidate.score);
                     return null;
                 }
             }
@@ -1027,9 +1022,6 @@ public final class PinPlaylistPatch {
                 - capturedAt;
 
         if (ageMs > PENDING_FLYOUT_VIEW_ID_TTL_MS) {
-            Log.d(TAG, "Discarded stale flyout-view playlist id="
-                    + playlistId
-                    + " ageMs=" + ageMs);
             return null;
         }
 
@@ -1148,13 +1140,6 @@ public final class PinPlaylistPatch {
                     findStrongSupportedPlaylistIdConsensus(counts);
 
             if (PinStore.isSupportedPlaylistId(consensus)) {
-                Log.d(TAG, "FlyoutPageIdentityBridge"
-                        + " source=fastMenuConsensus"
-                        + " playlistId=" + consensus
-                        + " scannedItems=" + scannedItems
-                        + " counts=" + counts
-                        + " menuType="
-                        + objectTypeName(flyoutMenu));
                 return consensus;
             }
         }
@@ -1492,13 +1477,6 @@ public final class PinPlaylistPatch {
             return null;
         }
 
-        Log.d(TAG, "FlyoutMediaTargetConsensus"
-                + " videoId=" + bestId
-                + " evidence=" + bestEvidence
-                + " sourceMatched="
-                + sourceIds.contains(bestId)
-                + " scannedItems=" + scannedItems
-                + " itemCounts=" + itemCounts);
 
         return bestId;
     }
@@ -1525,20 +1503,9 @@ public final class PinPlaylistPatch {
                     findOnlySupportedPlaylistId(ids);
 
             if (PinStore.isSupportedPlaylistId(playlistId)) {
-                Log.d(TAG, "FlyoutPageIdentityBridge"
-                        + " source=nativeSpeedDialCommand"
-                        + " playlistId=" + playlistId
-                        + " menuItemType="
-                        + objectTypeName(menuItem));
                 return playlistId;
             }
 
-            Log.d(TAG, "FlyoutPageIdentityBridge"
-                    + " source=nativeSpeedDialCommand"
-                    + " resolved=false"
-                    + " candidateIds=" + ids
-                    + " menuItemType="
-                    + objectTypeName(menuItem));
         }
 
         return null;
@@ -1555,11 +1522,6 @@ public final class PinPlaylistPatch {
                 findOnlySupportedPlaylistId(presenterIds);
 
         if (PinStore.isSupportedPlaylistId(playlistId)) {
-            Log.d(TAG, "FlyoutPageIdentityBridge"
-                    + " source=presenterGraph"
-                    + " playlistId=" + playlistId
-                    + " presenterType="
-                    + objectTypeName(flyoutPresenter));
             return playlistId;
         }
 
@@ -1587,12 +1549,6 @@ public final class PinPlaylistPatch {
                     if (flyoutMenuCandidateLogCount < 20) {
                         flyoutMenuCandidateLogCount++;
 
-                        Log.d(TAG, "FlyoutPageMenuCandidate"
-                                + " index=" + index
-                                + " title=" + title
-                                + " ids=" + itemIds
-                                + " itemType="
-                                + objectTypeName(menuItem));
                     }
 
                     menuIds.addAll(itemIds);
@@ -1624,24 +1580,9 @@ public final class PinPlaylistPatch {
         }
 
         if (PinStore.isSupportedPlaylistId(playlistId)) {
-            Log.d(TAG, "FlyoutPageIdentityBridge"
-                    + " source=menuGraphConsensus"
-                    + " playlistId=" + playlistId
-                    + " counts=" + menuIdCounts
-                    + " menuType="
-                    + objectTypeName(flyoutMenu));
             return playlistId;
         }
 
-        Log.d(TAG, "FlyoutPageIdentityBridge"
-                + " source=pageMenuGraphs"
-                + " resolved=false"
-                + " presenterIds=" + presenterIds
-                + " menuIds=" + menuIds
-                + " menuIdCounts=" + menuIdCounts
-                + " presenterType="
-                + objectTypeName(flyoutPresenter)
-                + " menuType=" + objectTypeName(flyoutMenu));
 
         return null;
     }
@@ -1683,21 +1624,9 @@ public final class PinPlaylistPatch {
         if (bestCount < 2
                 || tied
                 || bestCount <= secondBestCount) {
-            Log.d(TAG, "FlyoutPageIdentityConsensus"
-                    + " accepted=false"
-                    + " counts=" + counts
-                    + " bestCount=" + bestCount
-                    + " secondBestCount=" + secondBestCount
-                    + " tied=" + tied);
             return null;
         }
 
-        Log.d(TAG, "FlyoutPageIdentityConsensus"
-                + " accepted=true"
-                + " playlistId=" + bestId
-                + " bestCount=" + bestCount
-                + " secondBestCount=" + secondBestCount
-                + " counts=" + counts);
 
         return bestId;
     }
@@ -1767,26 +1696,11 @@ public final class PinPlaylistPatch {
                 }
             }
 
-            Log.d(TAG, "FlyoutTargetClassification"
-                    + " accepted=false"
-                    + " reason=mediaItemTarget"
-                    + " videoId=" + mediaItemVideoId
-                    + " sourceType="
-                    + objectTypeName(sourceObject)
-                    + " menuType="
-                    + objectTypeName(flyoutMenu)
-                    + " presenterType="
-                    + objectTypeName(flyoutPresenter));
             return;
         }
 
         if (!flyoutSourceEntryLogged) {
             flyoutSourceEntryLogged = true;
-            Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
-                    + " flyoutSourceHook=true"
-                    + " sourceType=" + objectTypeName(sourceObject)
-                    + " menuType=" + objectTypeName(flyoutMenu)
-                    + " presenterType=" + objectTypeName(flyoutPresenter));
         }
 
         Set<String> sourceStrings = Collections.emptySet();
@@ -1810,17 +1724,7 @@ public final class PinPlaylistPatch {
         }
 
         if (PinStore.isSupportedPlaylistId(viewPlaylistId)) {
-            Log.d(TAG, "FlyoutPageIdentityBridge"
-                    + " resolved=true"
-                    + " resolutionSource=pendingView"
-                    + " playlistId=" + playlistId
-                    + " sourceType=" + objectTypeName(sourceObject));
         } else if (PinStore.isSupportedPlaylistId(cachedSourcePlaylistId)) {
-            Log.d(TAG, "FlyoutPageIdentityBridge"
-                    + " resolved=true"
-                    + " resolutionSource=sourceIdentityCache"
-                    + " playlistId=" + playlistId
-                    + " sourceType=" + objectTypeName(sourceObject));
         }
 
         if (!PinStore.isSupportedPlaylistId(playlistId)) {
@@ -1839,12 +1743,6 @@ public final class PinPlaylistPatch {
             if (PinStore.isSupportedPlaylistId(speedDialPlaylistId)) {
                 playlistId = speedDialPlaylistId;
 
-                Log.d(TAG, "FlyoutPageIdentityBridge"
-                        + " resolved=true"
-                        + " resolutionSource=nativeSpeedDialCommand"
-                        + " playlistId=" + playlistId
-                        + " sourceType="
-                        + objectTypeName(sourceObject));
             }
         }
 
@@ -1858,28 +1756,12 @@ public final class PinPlaylistPatch {
             if (PinStore.isSupportedPlaylistId(menuGraphPlaylistId)) {
                 playlistId = menuGraphPlaylistId;
 
-                Log.d(TAG, "FlyoutPageIdentityBridge"
-                        + " resolved=true"
-                        + " resolutionSource=pageMenuGraphs"
-                        + " playlistId=" + playlistId
-                        + " sourceType="
-                        + objectTypeName(sourceObject));
             }
         }
 
         if (!PinStore.isSupportedPlaylistId(playlistId)) {
             clearActiveFlyoutRowContext();
 
-            Log.d(TAG, "Flyout source playlist id not found"
-                    + " sourceType=" + objectTypeName(sourceObject)
-                    + " viewBridgeAvailable="
-                    + PinStore.isSupportedPlaylistId(viewPlaylistId)
-                    + " fastMenuBridgeAvailable="
-                    + PinStore.isSupportedPlaylistId(fastMenuPlaylistId)
-                    + " speedDialBridgeAvailable="
-                    + PinStore.isSupportedPlaylistId(speedDialPlaylistId)
-                    + " menuGraphBridgeAvailable="
-                    + PinStore.isSupportedPlaylistId(menuGraphPlaylistId));
             logCandidateSet(
                     "FlyoutSourceCandidate",
                     sourceStrings
@@ -1922,14 +1804,6 @@ public final class PinPlaylistPatch {
         activeFlyoutCapturedAtMs =
                 android.os.SystemClock.elapsedRealtime();
 
-        Log.d(TAG, "Captured flyout playlist id=" + playlistId
-                + " presenterMapped=" + (flyoutPresenter != null)
-                + " activeBridge=true"
-                + " rowContextMatched="
-                + playlistId.equals(activeFlyoutRowPlaylistId)
-                + " sourceType=" + objectTypeName(sourceObject)
-                + " menuType=" + objectTypeName(flyoutMenu)
-                + " presenterType=" + objectTypeName(flyoutPresenter));
     }
 
     /**
@@ -2011,8 +1885,6 @@ public final class PinPlaylistPatch {
                     getActiveFlyoutPlaylistIdForNativeRow();
 
             if (playlistId == null) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=noCanonicalPlaylistId");
                 return convertedItems;
             }
 
@@ -2027,12 +1899,6 @@ public final class PinPlaylistPatch {
                     || selection.parentField == null
                     || !selection.titleField.getType()
                     .isInstance(nativeTitleMessage)) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=seedSchemaMismatch"
-                        + " itemType="
-                        + objectTypeName(nativeSeedItem)
-                        + " titleType="
-                        + objectTypeName(nativeTitleMessage));
                 return convertedItems;
             }
 
@@ -2050,10 +1916,6 @@ public final class PinPlaylistPatch {
                     componentBuilder,
                     "copyOnWrite"
             )) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=componentCopyFailed"
-                        + " componentType="
-                        + objectTypeName(seedComponent));
                 return convertedItems;
             }
 
@@ -2069,10 +1931,6 @@ public final class PinPlaylistPatch {
                     selection.titleField.getName(),
                     nativeTitleMessage
             )) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=titleWriteFailed"
-                        + " componentType="
-                        + objectTypeName(seedComponent));
                 return convertedItems;
             }
 
@@ -2083,8 +1941,6 @@ public final class PinPlaylistPatch {
                     );
 
             if (finalComponent == null) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=componentBuildFailed");
                 return convertedItems;
             }
 
@@ -2099,10 +1955,6 @@ public final class PinPlaylistPatch {
                     itemBuilder,
                     "copyOnWrite"
             )) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=itemCopyFailed"
-                        + " itemType="
-                        + objectTypeName(nativeSeedItem));
                 return convertedItems;
             }
 
@@ -2118,8 +1970,6 @@ public final class PinPlaylistPatch {
                     selection.parentField.getName(),
                     finalComponent
             )) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=itemComponentWriteFailed");
                 return convertedItems;
             }
 
@@ -2131,8 +1981,6 @@ public final class PinPlaylistPatch {
 
             if (finalItem == null
                     || finalItem == nativeSeedItem) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=itemBuildFailed");
                 return convertedItems;
             }
 
@@ -2167,13 +2015,6 @@ public final class PinPlaylistPatch {
                     ));
 
             if (!nativeTitleMatches) {
-                Log.d(TAG, "NativeFactoryPinRow skipped=true"
-                        + " reason=nativeTitleValidationFailed"
-                        + " expected=" + expectedTitle
-                        + " actual=" + renderedTitle
-                        + " graphFallback=false"
-                        + " itemType="
-                        + objectTypeName(finalItem));
                 return convertedItems;
             }
 
@@ -2251,25 +2092,6 @@ public final class PinPlaylistPatch {
                 flyoutObjectIds.put(finalItem, playlistId);
             }
 
-            Log.d(TAG, "NativeFactoryPinRow added=true"
-                    + " postNormalization=true"
-                    + " playlistId=" + playlistId
-                    + " itemType="
-                    + objectTypeName(finalItem)
-                    + " componentType="
-                    + objectTypeName(finalComponent)
-                    + " titleType="
-                    + objectTypeName(nativeTitleMessage)
-                    + " title=" + renderedTitle
-                    + " iconMode=patchOwnedBindDrawable"
-                    + " speedDialIndex=" + speedDialIndex
-                    + " sourceSpeedDialPresent="
-                    + activeFlyoutHasSpeedDial
-                    + " insertionIndex=" + insertionIndex
-                    + " removedExistingRows="
-                    + removedExistingRows
-                    + " outputCount="
-                    + outputItems.size());
 
             return outputItems;
         } catch (Throwable error) {
@@ -2313,10 +2135,6 @@ public final class PinPlaylistPatch {
              * never receive a synthetic command-bearing row.
              */
             if (!PinStore.isSupportedPlaylistId(playlistId)) {
-                Log.d(TAG, "NativePinMenuRow skipped=true"
-                        + " reason=noCanonicalPlaylistId"
-                        + " menuType=" + objectTypeName(flyoutMenu)
-                        + " sourceType=" + objectTypeName(sourceObject));
                 return flyoutMenu;
             }
 
@@ -2327,9 +2145,6 @@ public final class PinPlaylistPatch {
 
             if (menuBuilder == null
                     || !invokeNoArgVoid(menuBuilder, "copyOnWrite")) {
-                Log.d(TAG, "NativePinMenuRow skipped=true"
-                        + " reason=menuCopyFailed"
-                        + " menuType=" + objectTypeName(flyoutMenu));
                 return flyoutMenu;
             }
 
@@ -2339,17 +2154,11 @@ public final class PinPlaylistPatch {
             );
 
             if (workingMenu == null) {
-                Log.d(TAG, "NativePinMenuRow skipped=true"
-                        + " reason=noMenuCopyInstance"
-                        + " menuType=" + objectTypeName(flyoutMenu));
                 return flyoutMenu;
             }
 
             Field listField = findNativeMenuListField(workingMenu);
             if (listField == null) {
-                Log.d(TAG, "NativePinMenuRow skipped=true"
-                        + " reason=noNativeMenuList"
-                        + " menuType=" + objectTypeName(workingMenu));
                 logDirectObjectFields(
                         "NativePinMenuContainerProbe",
                         workingMenu
@@ -2362,18 +2171,11 @@ public final class PinPlaylistPatch {
              * The generated helper makes that list mutable on only this copy.
              */
             if (!invokeNoArgVoid(workingMenu, "a")) {
-                Log.d(TAG, "NativePinMenuRow skipped=true"
-                        + " reason=menuListCopyOnWriteFailed"
-                        + " listField=" + listField.getName()
-                        + " menuType=" + objectTypeName(workingMenu));
                 return flyoutMenu;
             }
 
             List mutableItems = readListField(workingMenu, listField);
             if (mutableItems == null || mutableItems.isEmpty()) {
-                Log.d(TAG, "NativePinMenuRow skipped=true"
-                        + " reason=noMutableMenuList"
-                        + " listField=" + listField.getName());
                 return flyoutMenu;
             }
 
@@ -2451,11 +2253,6 @@ public final class PinPlaylistPatch {
             }
 
             if (freshItem == null) {
-                Log.d(TAG, "NativePinMenuRow skipped=true"
-                        + " reason=noFreshNativeSchema"
-                        + " listField=" + listField.getName()
-                        + " itemCount=" + mutableItems.size()
-                        + " speedDialIndex=" + speedDialIndex);
                 logNativeMenuCandidateSummary(mutableItems);
                 return flyoutMenu;
             }
@@ -2485,27 +2282,12 @@ public final class PinPlaylistPatch {
             );
 
             if (preparedMenu == null) {
-                Log.d(TAG, "NativePinMenuRow skipped=true"
-                        + " reason=menuCopyBuildFailed"
-                        + " menuType=" + objectTypeName(flyoutMenu));
                 return flyoutMenu;
             }
 
             /* Index the exact detached object passed into the native pipeline. */
             indexFlyoutObjectGraph(preparedMenu, playlistId);
 
-            Log.d(TAG, "NativePinMenuRow added=true"
-                    + " detachedCopy=true"
-                    + " playlistId=" + playlistId
-                    + " pinned=" + pinned
-                    + " listField=" + listField.getName()
-                    + " schemaIndex=" + schemaIndex
-                    + " speedDialIndex=" + speedDialIndex
-                    + " sourceSpeedDialPresent="
-                    + activeFlyoutHasSpeedDial
-                    + " insertionIndex=" + insertionIndex
-                    + " removedExistingRows=" + removedExistingRows
-                    + " itemType=" + objectTypeName(freshItem));
 
             return preparedMenu;
         } catch (Throwable error) {
@@ -2600,11 +2382,6 @@ public final class PinPlaylistPatch {
         }
 
         if (bestField != null) {
-            Log.d(TAG, "NativePinMenuList selected=true"
-                    + " structuralFallback=true"
-                    + " field=" + bestField.getName()
-                    + " score=" + bestScore
-                    + " menuType=" + objectTypeName(flyoutMenu));
         }
 
         return bestField;
@@ -2656,29 +2433,6 @@ public final class PinPlaylistPatch {
                     ? null
                     : findActiveMenuComponent(item, null, null);
 
-            Log.d(TAG, "NativePinMenuCandidate"
-                    + " index=" + index
-                    + " itemType=" + objectTypeName(item)
-                    + " schemaCapable=" + (selection != null)
-                    + " componentType="
-                    + (selection == null
-                    ? "<none>"
-                    : objectTypeName(selection.sourceComponent))
-                    + " parentField="
-                    + (selection == null
-                    || selection.parentField == null
-                    ? "<none>"
-                    : selection.parentField.getName())
-                    + " titleField="
-                    + (selection == null
-                    ? "<none>"
-                    : selection.titleField.getName())
-                    + " iconField="
-                    + (selection == null
-                    ? "<none>"
-                    : selection.iconField.getName())
-                    + " speedDial=" + isSpeedDialMenuItem(item)
-                    + " ids=" + collectCanonicalPlaylistIds(item, 5));
         }
     }
 
@@ -2698,8 +2452,6 @@ public final class PinPlaylistPatch {
                 outside.performClick();
             }
         } catch (Throwable error) {
-            Log.d(TAG, "Native flyout dismissal unavailable: "
-                    + error.getClass().getSimpleName());
         }
     }
 
@@ -3179,17 +2931,6 @@ public final class PinPlaylistPatch {
         );
 
         for (FreshMenuSchemaCandidate candidate : candidates) {
-            Log.d(TAG, "NativePinSchemaCandidate"
-                    + " index=" + candidate.index
-                    + " frequency="
-                    + frequencies.get(candidate.schemaKey)
-                    + " schema=" + candidate.schemaKey
-                    + " score=" + candidate.selection.score
-                    + " ids="
-                    + collectCanonicalPlaylistIds(
-                    candidate.item,
-                    6
-            ));
         }
 
         return candidates;
@@ -3457,20 +3198,6 @@ public final class PinPlaylistPatch {
                 freshItem
         );
 
-        Log.d(TAG, "SeparatePinFreshModel"
-                + " success=true"
-                + " itemType="
-                + objectTypeName(freshItem)
-                + " componentType="
-                + objectTypeName(freshComponent)
-                + " parentField="
-                + (selection.parentField == null
-                ? "<item>"
-                : selection.parentField.getName())
-                + " iconSourceType="
-                + objectTypeName(iconSchema)
-                + " pinned=" + pinned
-                + " title=" + title);
 
         return freshItem;
     }
@@ -4033,13 +3760,6 @@ public final class PinPlaylistPatch {
             @Nullable Object schemaItem,
             @Nullable Object schemaComponent
     ) {
-        Log.d(TAG, "SeparatePinFreshModel"
-                + " success=false"
-                + " stage=" + stage
-                + " itemType="
-                + objectTypeName(schemaItem)
-                + " componentType="
-                + objectTypeName(schemaComponent));
     }
 
     private static final class FreshMessageBuilder {
@@ -4390,7 +4110,6 @@ public final class PinPlaylistPatch {
                     .append(objectTypeName(value));
         }
 
-        Log.d(TAG, output.toString());
     }
 
     @Nullable
@@ -4405,10 +4124,6 @@ public final class PinPlaylistPatch {
                 );
 
         if (message == null) {
-            Log.d(TAG, "SeparatePinFreshModel"
-                    + " success=false"
-                    + " stage=textFactory"
-                    + " text=" + text);
         }
 
         return message;
@@ -4517,10 +4232,6 @@ public final class PinPlaylistPatch {
             if (iconView == null) {
                 if (flyoutMenuIconLogCount < 8) {
                     flyoutMenuIconLogCount++;
-                    Log.d(TAG, "LibraryPinMenuIcon applied=false"
-                            + " reason=noNativeIconView"
-                            + " presenterType="
-                            + objectTypeName(presenter));
                 }
                 return;
             }
@@ -4572,14 +4283,6 @@ public final class PinPlaylistPatch {
 
             if (flyoutMenuIconLogCount < 8) {
                 flyoutMenuIconLogCount++;
-                Log.d(TAG, "LibraryPinMenuIcon applied=true"
-                        + " action="
-                        + (unpinAction ? "unpin" : "pin")
-                        + " source=patchOwnedDrawable"
-                        + " presenterType="
-                        + objectTypeName(presenter)
-                        + " itemType="
-                        + objectTypeName(menuItem));
             }
         } catch (Throwable error) {
             Log.e(TAG, "Failed styling Library pin menu icon", error);
@@ -4690,7 +4393,6 @@ public final class PinPlaylistPatch {
         String key = lookupPlaylistIdFromPresenterGraph(presenter);
 
         if (key != null) {
-            Log.d(TAG, "Resolved playlist id from mapped flyout presenter=" + key);
         } else {
             key = lookupFlyoutPlaylistId(menuItem);
         }
@@ -4698,7 +4400,6 @@ public final class PinPlaylistPatch {
         if (key == null) {
             key = consumeActiveFlyoutPlaylistId();
             if (key != null) {
-                Log.d(TAG, "Resolved playlist id from active flyout bridge=" + key);
             }
         }
 
@@ -4716,14 +4417,6 @@ public final class PinPlaylistPatch {
             return injectedMenuItem;
         }
 
-        Log.d(TAG, (injectedMenuItem
-                ? "Handled separate Library pin item"
-                : "Hijacked Speed Dial item")
-                + " icon=" + name
-                + " key=" + key
-                + " rowPosition=" + activeFlyoutAdapterPosition
-                + " stableRowId=" + activeFlyoutStableRowId
-                + " model=" + menuItem);
 
         if (clickedView == null) {
             Log.e(TAG, "Cannot persist pin state: clicked View is null");
@@ -4790,11 +4483,6 @@ public final class PinPlaylistPatch {
                     postVisiblePinIndicatorRefresh(adapter);
                 }
 
-                Log.d(TAG, "PinToggleFallbackRefresh"
-                        + " adapterIdentity="
-                        + identityString(adapter)
-                        + " fullNotify=" + fullNotify
-                        + " activeContextPreserved=true");
             }
             Long rowId = matchingRowContext
                     ? activeFlyoutStableRowId
@@ -4827,15 +4515,9 @@ public final class PinPlaylistPatch {
                         clickedView
                 );
             } else {
-                Log.d(TAG, "Pin state stored, but active Library"
-                        + " mapping was unavailable for"
-                        + " immediate reorder");
             }
         }
 
-        Log.d(TAG, newPinnedState
-                ? "Stored local playlist pin"
-                : "Removed local playlist pin");
 
         return true;
     }
@@ -5460,9 +5142,6 @@ public final class PinPlaylistPatch {
                     lastFeatureEnabledState = enabled;
                     featureStoreStateSynchronized = false;
 
-                    Log.d(TAG, "PinPlaylistFeatureState"
-                            + " enabled=" + enabled
-                            + " previous=" + previous);
                 }
             }
         }
@@ -5496,9 +5175,6 @@ public final class PinPlaylistPatch {
                 activeFlyoutHasSpeedDial = false;
                 activeFlyoutCapturedAtMs = 0L;
 
-                Log.d(TAG, "PinPlaylistFreshStart"
-                        + " clearedPins=true"
-                        + " reason=disabledToEnabled");
             }
         }
     }
@@ -5524,8 +5200,6 @@ public final class PinPlaylistPatch {
 
         if (!hasPins && !noPinColdStartBypassLogged) {
             noPinColdStartBypassLogged = true;
-            Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
-                    + " noPinColdStartBypass=true");
         }
 
         return hasPins;
@@ -5750,14 +5424,6 @@ public final class PinPlaylistPatch {
 
                 if (adapterProxyVisualBridgeLogCount < 12) {
                     adapterProxyVisualBridgeLogCount++;
-                    Log.d(TAG, "AdapterProxyVisualBridge"
-                            + " discovered=true"
-                            + " active=" + hasAnyPinsFast()
-                            + " ownerIdentity="
-                            + identityString(structurallyMatchedOwner)
-                            + " visualAdapterIdentity="
-                            + identityString(visualAdapter)
-                            + " sourceCount=" + sourceCount);
                 }
             }
         }
@@ -5839,18 +5505,6 @@ public final class PinPlaylistPatch {
 
         if (changed && adapterProxyVisualBridgeLogCount < 12) {
             adapterProxyVisualBridgeLogCount++;
-            Log.d(TAG, "AdapterProxyVisualBridge"
-                    + " installed=true"
-                    + " ownerType=" + objectTypeName(owner)
-                    + " ownerIdentity=" + identityString(owner)
-                    + " visualAdapterType="
-                    + objectTypeName(visualAdapter)
-                    + " visualAdapterIdentity="
-                    + identityString(visualAdapter)
-                    + " sourceCount=" + sourceCount
-                    + " playlistCount=" + playlistIds.size()
-                    + " visualToSource="
-                    + java.util.Arrays.toString(visualToSource));
         }
     }
 
@@ -5893,12 +5547,6 @@ public final class PinPlaylistPatch {
             if (adapterProxyFactoryInstallLogCount < 12) {
                 adapterProxyFactoryInstallLogCount++;
 
-                Log.d(TAG, "PreFactoryFastPathSkipped"
-                        + " reason=entryValidation"
-                        + " ownerType=" + objectTypeName(owner)
-                        + " sourceAdapterType="
-                        + objectTypeName(sourceAdapter)
-                        + " sourceCount=" + sourceCount);
             }
 
             return visualPosition;
@@ -5950,13 +5598,6 @@ public final class PinPlaylistPatch {
             if (adapterProxyFactoryInstallLogCount < 12) {
                 adapterProxyFactoryInstallLogCount++;
 
-                    Log.d(TAG, "PreFactoryVisualBridgePending"
-                            + " reason=visualAdapterUnavailable"
-                            + " ownerType=" + objectTypeName(owner)
-                            + " ownerIdentity=" + identityString(owner)
-                            + " sourceCount=" + sourceCount
-                            + " visualAdapterType="
-                            + objectTypeName(visualAdapter));
             }
 
             return visualPosition;
@@ -5989,16 +5630,6 @@ public final class PinPlaylistPatch {
         activeAdapterProxyFactoryOwner = owner;
         activeAdapterProxyFactoryVisualAdapter = visualAdapter;
 
-        Log.d(TAG, "PreFactoryFastPath"
-                + " installed=true"
-                + " ownerIdentity=" + identityString(owner)
-                + " visualAdapterIdentity="
-                + identityString(visualAdapter)
-                + " sourceCount=" + sourceCount
-                + " visualToSource="
-                + java.util.Arrays.toString(
-                visualToSource
-        ));
 
         return visualPosition;
     }
@@ -6028,9 +5659,6 @@ public final class PinPlaylistPatch {
         if (context == null) {
             if (adapterProxyFactoryMapLogCount < 24) {
                 adapterProxyFactoryMapLogCount++;
-                Log.d(TAG, "PreFactoryPositionMapSkipped"
-                        + " reason=noContext"
-                        + " count=" + sourceCount);
             }
             return null;
         }
@@ -6099,12 +5727,6 @@ public final class PinPlaylistPatch {
             }
 
             if (sourcePositionById.containsKey(playlistId)) {
-                Log.d(TAG, "PreFactoryPositionMapSkipped"
-                        + " reason=duplicatePlaylistId"
-                        + " playlistId=" + playlistId
-                        + " firstPosition="
-                        + sourcePositionById.get(playlistId)
-                        + " duplicatePosition=" + position);
                 return null;
             }
 
@@ -6126,13 +5748,6 @@ public final class PinPlaylistPatch {
         if (playlistIdByPosition.isEmpty()) {
             if (adapterProxyFactoryMapLogCount < 24) {
                 adapterProxyFactoryMapLogCount++;
-                Log.d(TAG, "PreFactoryPositionMapSkipped"
-                        + " reason=tooFewPlaylistRows"
-                        + " count=" + sourceCount
-                        + " mapped="
-                        + playlistIdByPosition.size()
-                        + " sourceTypes="
-                        + sourceTypeSummary(sourceItems));
             }
             return null;
         }
@@ -6188,11 +5803,6 @@ public final class PinPlaylistPatch {
 
         if (desiredPlaylistSources.size()
                 != playlistSlots.size()) {
-            Log.d(TAG, "PreFactoryPositionMapSkipped"
-                    + " reason=playlistCountMismatch"
-                    + " slots=" + playlistSlots
-                    + " desired="
-                    + desiredPlaylistSources);
             return null;
         }
 
@@ -6261,30 +5871,10 @@ public final class PinPlaylistPatch {
                 sourceCount,
                 visualToSource
         )) {
-            Log.d(TAG, "PreFactoryPositionMapSkipped"
-                    + " reason=notPermutation"
-                    + " visualToSource="
-                    + java.util.Arrays.toString(
-                    visualToSource
-            ));
             return null;
         }
 
 
-        Log.d(TAG, "PreFactoryPositionMap"
-                + " installed=true"
-                + " ownerIdentity="
-                + identityString(owner)
-                + " sourceAdapterType="
-                + objectTypeName(sourceAdapter)
-                + " count=" + sourceCount
-                + " playlistSlots=" + playlistSlots
-                + " pinnedPresent=" + pinnedPresent
-                + " resetToNativeOrder=" + resetToNativeOrder
-                + " visualToSource="
-                + java.util.Arrays.toString(
-                visualToSource
-        ));
 
         return visualToSource;
     }
@@ -6330,8 +5920,6 @@ public final class PinPlaylistPatch {
 
         if (hasPins && !adapterProxyHookLogged) {
             adapterProxyHookLogged = true;
-            Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
-                    + " adapterProxySourceHook=true");
         }
 
         ArrayList<AdapterProxySource> stack =
@@ -6448,9 +6036,6 @@ public final class PinPlaylistPatch {
 
         if (nativeLibraryResolverLogCount < 12) {
             nativeLibraryResolverLogCount++;
-            Log.d(TAG, "NativeLibraryResolverEntry"
-                    + " transactionType="
-                    + objectTypeName(transaction));
         }
 
         if (transaction instanceof List) {
@@ -6516,9 +6101,6 @@ public final class PinPlaylistPatch {
         if (!directLists.isEmpty()
                 && nativeLibraryResolverLogCount < 30) {
             nativeLibraryResolverLogCount++;
-            Log.d(TAG, "NativeLibraryDirectLists"
-                    + " ownerType=" + objectTypeName(owner)
-                    + " lists=" + directLists);
         }
 
         return false;
@@ -6706,13 +6288,6 @@ public final class PinPlaylistPatch {
                         );
                     }
 
-                    Log.d(TAG, "PersistedLibraryPermutationInstalled"
-                            + " adapterType="
-                            + objectTypeName(adapter)
-                            + " total=" + rows.size()
-                            + " rowType=" + expectedRowType
-                            + " permutation="
-                            + java.util.Arrays.toString(permutation));
                     return;
                 }
             }
@@ -6794,13 +6369,6 @@ public final class PinPlaylistPatch {
                     preparedNativeLibraryLists.put(rawList, token);
                 }
 
-                Log.d(TAG, "PersistedNativeLibraryOrderApplied"
-                        + " ownerType=" + objectTypeName(owner)
-                        + " field=" + field.getName()
-                        + " total=" + rawList.size()
-                        + " rowType=" + expectedRowType
-                        + " permutation="
-                        + java.util.Arrays.toString(permutation));
                 return true;
             }
         }
@@ -6875,15 +6443,6 @@ public final class PinPlaylistPatch {
                     sourceRows.setValueAt(index, values.get(index));
                 }
 
-                Log.d(TAG, "NativeLibrarySourcePrepared"
-                        + " transactionType="
-                        + objectTypeName(transaction)
-                        + " field=" + field.getName()
-                        + " total=" + values.size()
-                        + " rowType="
-                        + (values.isEmpty()
-                        ? "empty"
-                        : objectTypeName(values.get(0))));
                 return;
             }
         }
@@ -7048,16 +6607,6 @@ public final class PinPlaylistPatch {
         int expectedPlaylistRows = lastKnownLibraryPlaylistCount;
         if (nativeLibraryResolverLogCount < 30) {
             nativeLibraryResolverLogCount++;
-            Log.d(TAG, "NativeLibraryResolverCandidate"
-                    + " ownerType=" + objectTypeName(owner)
-                    + " rowType="
-                    + (rawList.isEmpty()
-                    ? "empty"
-                    : objectTypeName(rawList.get(0)))
-                    + " total=" + total
-                    + " mapped=" + idByPosition
-                    + " expected=" + expectedPlaylistRows
-                    + " pinOrder=" + pinOrder);
         }
 
         if (idByPosition.size() < 3
@@ -7102,13 +6651,6 @@ public final class PinPlaylistPatch {
 
         if (nativeLibrarySubmissionLogCount < 20) {
             nativeLibrarySubmissionLogCount++;
-            Log.d(TAG, "NativeLibraryOrderPrepared"
-                    + " ownerType=" + objectTypeName(owner)
-                    + " total=" + total
-                    + " playlistSlots=" + playlistSlots
-                    + " pinnedPresent=" + pinnedPresent
-                    + " before=" + currentIds
-                    + " after=" + desiredIds);
         }
 
         return true;
@@ -7386,8 +6928,6 @@ public final class PinPlaylistPatch {
 
         if (!adapterProxyHookLogged) {
             adapterProxyHookLogged = true;
-            Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
-                    + " adapterProxySourceHook=true");
         }
 
         if (!isAdapterProxyOwner(owner, false)
@@ -7461,8 +7001,6 @@ public final class PinPlaylistPatch {
 
         if (!adapterProxyHookLogged) {
             adapterProxyHookLogged = true;
-            Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
-                    + " adapterProxySourceHook=true");
         }
 
         if (owner == null) {
@@ -7549,11 +7087,6 @@ public final class PinPlaylistPatch {
             if (adapterProxyFactoryInstallLogCount < 20) {
                 adapterProxyFactoryInstallLogCount++;
 
-                Log.d(TAG, "PreSubmitFastPathSkipped"
-                        + " reason=preFactoryMapActive"
-                        + " ownerIdentity="
-                        + identityString(owner)
-                        + " total=" + total);
             }
             logAdapterProxyTransactionDiagnostic(
                     "event=prepareAdapterProxyRenderInfos.rejected"
@@ -7602,13 +7135,6 @@ public final class PinPlaylistPatch {
         if (total > 0 && adapterProxyAttemptLogCount < 60) {
             adapterProxyAttemptLogCount++;
 
-            Log.d(TAG, "PreSubmitEntry"
-                    + " ownerIdentity=" + identityString(owner)
-                    + " total=" + total
-                    + " proxyRows=" + proxyRows
-                    + " sourcedRows=" + sourcedRows
-                    + " expectedPlaylistRows="
-                    + lastKnownLibraryPlaylistCount);
         }
 
         /*
@@ -7736,12 +7262,6 @@ public final class PinPlaylistPatch {
         }
 
         if (!hasAnyPinsFast()) {
-            Log.d(TAG, "AdapterProxyRelationshipDiscovered"
-                    + " ownerIdentity=" + identityString(owner)
-                    + " controllerIdentity="
-                    + identityString(transaction.controller)
-                    + " generation=" + transaction.generation
-                    + " total=" + total);
             logAdapterProxyTransactionDiagnostic(
                     "event=prepareAdapterProxyRenderInfos.rejected"
                             + " reason=rejectedNoPins"
@@ -7824,27 +7344,6 @@ public final class PinPlaylistPatch {
         if (adapterProxyAttemptLogCount < 100) {
             adapterProxyAttemptLogCount++;
 
-            Log.d(TAG, "PreSubmitMapping"
-                    + " total=" + total
-                    + " proxyRows=" + proxyRows
-                    + " sourcedRows=" + sourcedRows
-                    + " expectedPlaylistRows="
-                    + lastKnownLibraryPlaylistCount
-                    + " strategy="
-                    + ADAPTER_PROXY_DIRECT_SOURCE_STRATEGY.name()
-                    + " selectedPath="
-                    + (mapping == null ? null : mapping.path)
-                    + " offset="
-                    + (mapping == null ? 0 : mapping.offset)
-                    + " score="
-                    + (mapping == null ? 0 : mapping.score)
-                    + " mappedRows="
-                    + (mapping == null
-                    ? 0
-                    : mapping.idsByListPosition.size())
-                    + " ambiguous="
-                    + (mapping != null && mapping.ambiguous)
-                    + " pinOrder=" + pinOrder);
         }
 
         if (mapping == null
@@ -7967,10 +7466,6 @@ public final class PinPlaylistPatch {
         }
 
         if (desiredSourceItems.size() != playlistSlots.size()) {
-            Log.d(TAG, "PreSubmitSkipped reason=incompleteDesiredOrder"
-                    + " slots=" + playlistSlots
-                    + " desired=" + desiredSourceItems.size()
-                    + " mapping=" + mapping.idsByListPosition);
             logAdapterProxyTransactionDiagnostic(
                     "event=prepareAdapterProxyRenderInfos.rejected"
                             + " reason=rejectedIncompleteDesiredOrder"
@@ -8083,21 +7578,6 @@ public final class PinPlaylistPatch {
             resultingIds.add(id);
         }
 
-        Log.d(TAG, "PreSubmitApplied"
-                + " changed="
-                + (positionRemapInstalled || proxyListChanged)
-                + " positionRemapInstalled="
-                + positionRemapInstalled
-                + " sourceMatched=false"
-                + " sourceChanged=false"
-                + " sourcePath=null"
-                + " sourceMode=virtualPositionRemap"
-                + " proxyListChanged=" + proxyListChanged
-                + " total=" + total
-                + " playlistSlots=" + playlistSlots
-                + " pinnedPresent=" + pinnedPresent
-                + " identityPath=" + mapping.path
-                + " resultingIds=" + resultingIds);
     }
 
 
@@ -8125,9 +7605,6 @@ public final class PinPlaylistPatch {
             return installed;
         } catch (Throwable error) {
             rollback.restore();
-            Log.d(TAG, "PreSubmitPositionMapRolledBack"
-                    + " ownerType=" + objectTypeName(owner)
-                    + " error=" + error.getClass().getName());
             return false;
         }
     }
@@ -8570,23 +8047,6 @@ public final class PinPlaylistPatch {
         boolean refreshApplied =
                 fallbackFullNotify || finalFullNotify;
 
-        Log.d(TAG, "AdapterPositionMapRefresh"
-                + " adapterType="
-                + objectTypeName(visualAdapter)
-                + " adapterIdentity="
-                + identityString(visualAdapter)
-                + " refreshRequired="
-                + refreshRequired
-                + " refreshApplied="
-                + refreshApplied
-                + " notifications="
-                + notifications
-                + " finalFullNotify="
-                + finalFullNotify
-                + " positionMap="
-                + java.util.Arrays.toString(
-                        desiredPositionMap
-                ));
 
         return true;
     }
@@ -8601,13 +8061,6 @@ public final class PinPlaylistPatch {
 
         if (!isLibraryAdapter(visualAdapter)
                 || sourceAdapter == null) {
-            Log.d(TAG, "PreSubmitPositionMapSkipped"
-                    + " reason=adapterResolution"
-                    + " ownerType=" + objectTypeName(owner)
-                    + " visualAdapterType="
-                    + objectTypeName(visualAdapter)
-                    + " sourceAdapterType="
-                    + objectTypeName(sourceAdapter));
             return false;
         }
 
@@ -8619,16 +8072,6 @@ public final class PinPlaylistPatch {
                 );
 
         if (visualToSource == null) {
-            Log.d(TAG, "PreSubmitPositionMapSkipped"
-                    + " reason=invalidSubmittedPositionMap"
-                    + " capturedSourceCount="
-                    + (orderedSources == null
-                    ? 0
-                    : orderedSources.size())
-                    + " playlistSlotCount="
-                    + (playlistSlots == null
-                    ? 0
-                    : playlistSlots.size()));
             return false;
         }
 
@@ -8649,27 +8092,9 @@ public final class PinPlaylistPatch {
                 );
 
         if (!positionMapInstalled) {
-            Log.d(TAG, "PreSubmitPositionMapSkipped"
-                    + " reason=positionMapRefreshBoundaryRejected"
-                    + " ownerIdentity="
-                    + identityString(owner)
-                    + " visualAdapterIdentity="
-                    + identityString(visualAdapter));
             return false;
         }
 
-        Log.d(TAG, "PreSubmitPositionMap"
-                + " installed=true"
-                + " visualAdapterType="
-                + objectTypeName(visualAdapter)
-                + " visualAdapterIdentity="
-                + identityString(visualAdapter)
-                + " sourceAdapterType="
-                + objectTypeName(sourceAdapter)
-                + " visualToSource="
-                + java.util.Arrays.toString(
-                visualToSource
-        ));
 
         return true;
     }
@@ -8693,10 +8118,6 @@ public final class PinPlaylistPatch {
         }
 
         if (removed) {
-            Log.d(TAG, "AdapterPositionMapCleared"
-                    + " reason=" + reason
-                    + " adapterIdentity="
-                    + identityString(visualAdapter));
         }
     }
 
@@ -8748,13 +8169,6 @@ public final class PinPlaylistPatch {
         pendingAdapterPositionRemapTarget.remove();
         pendingAdapterPositionRemapKind.remove();
 
-        Log.d(TAG, "ActivePositionMapCleared"
-                + " reason=" + reason
-                + " removed=" + removed
-                + " ownerIdentity=" + identityString(owner)
-                + " visualAdapterIdentity="
-                + identityString(visualAdapter)
-                + " activeContextPreserved=true");
     }
 
     private static void rememberVisibleBoundRow(
@@ -8926,11 +8340,6 @@ public final class PinPlaylistPatch {
         int refreshed =
                 refreshVisiblePinIndicators(adapter);
 
-        Log.d(TAG, "VisiblePinIndicatorRefresh"
-                + " pass=" + pass
-                + " adapterIdentity="
-                + identityString(adapter)
-                + " refreshedRows=" + refreshed);
     }
 
     private static void postVisiblePinIndicatorRefresh(
@@ -8966,11 +8375,6 @@ public final class PinPlaylistPatch {
 
         if (rowTextViews == null
                 || rowTextViews.subtitle == null) {
-            Log.d(TAG, "DirectFlyoutPinIndicatorRefresh"
-                    + " pass=" + pass
-                    + " applied=false"
-                    + " reason=noSubtitle"
-                    + " playlistId=" + playlistId);
             return false;
         }
 
@@ -9051,15 +8455,6 @@ public final class PinPlaylistPatch {
         subtitleView.invalidate();
         itemView.invalidate();
 
-        Log.d(TAG, "DirectFlyoutPinIndicatorRefresh"
-                + " pass=" + pass
-                + " applied=true"
-                + " pinned=" + pinned
-                + " playlistId=" + playlistId
-                + " title="
-                + textValue(rowTextViews.title)
-                + " subtitle="
-                + textValue(subtitleView));
 
         return true;
     }
@@ -9070,11 +8465,6 @@ public final class PinPlaylistPatch {
             @Nullable String playlistId
     ) {
         if (itemView == null) {
-            Log.d(TAG, "DirectFlyoutPinIndicatorRefresh"
-                    + " pass=scheduled"
-                    + " applied=false"
-                    + " reason=noCapturedRow"
-                    + " playlistId=" + playlistId);
             return;
         }
 
@@ -9096,13 +8486,6 @@ public final class PinPlaylistPatch {
                             || !originalRowText.equals(
                             collectRowText(itemView)
                     )) {
-                        Log.d(TAG,
-                                "DirectFlyoutPinIndicatorRefresh"
-                                        + " pass=afterLayout"
-                                        + " applied=false"
-                                        + " reason=rowChanged"
-                                        + " playlistId="
-                                        + playlistId);
                         return;
                     }
 
@@ -9122,13 +8505,6 @@ public final class PinPlaylistPatch {
                             || !originalRowText.equals(
                             collectRowText(itemView)
                     )) {
-                        Log.d(TAG,
-                                "DirectFlyoutPinIndicatorRefresh"
-                                        + " pass=settled"
-                                        + " applied=false"
-                                        + " reason=rowChanged"
-                                        + " playlistId="
-                                        + playlistId);
                         return;
                     }
 
@@ -9184,13 +8560,6 @@ public final class PinPlaylistPatch {
 
         if (libraryPinIndicatorMetadataLogCount < 12) {
             libraryPinIndicatorMetadataLogCount++;
-            Log.d(TAG, "LibraryPinIndicatorMetadata"
-                    + " adapterIdentity="
-                    + identityString(visualAdapter)
-                    + " playlistRows="
-                    + visualPlaylistIds.size()
-                    + " pinnedPositions="
-                    + pinnedVisualPositions);
         }
     }
 
@@ -9299,16 +8668,6 @@ public final class PinPlaylistPatch {
         if (isPlaylist && rowPinIndicatorLogCount < 12) {
             rowPinIndicatorLogCount++;
 
-            Log.d(TAG, "LibraryPinIndicator"
-                    + " visualPosition="
-                    + visualPosition
-                    + " pinned=" + isPinned
-                    + " playlistId=" + playlistId
-                    + " title="
-                    + textValue(rowTextViews.title)
-                    + " subtitle="
-                    + textValue(subtitleView)
-                    + " mode=subtitleVectorPin");
         }
     }
 
@@ -9818,13 +9177,6 @@ public final class PinPlaylistPatch {
         if (owner == null
                 || visualAdapter == null
                 || context == null) {
-            Log.d(TAG, "PinTogglePositionMapRefreshSkipped"
-                    + " reason=missingActiveContext"
-                    + " owner=" + identityString(owner)
-                    + " visualAdapter="
-                    + identityString(visualAdapter)
-                    + " contextAvailable="
-                    + (context != null));
             return false;
         }
 
@@ -9835,11 +9187,6 @@ public final class PinPlaylistPatch {
         if (sourceAdapter == null
                 || sourceCount == null
                 || sourceCount <= 0) {
-            Log.d(TAG, "PinTogglePositionMapRefreshSkipped"
-                    + " reason=invalidSource"
-                    + " sourceAdapterType="
-                    + objectTypeName(sourceAdapter)
-                    + " sourceCount=" + sourceCount);
             return false;
         }
 
@@ -9851,9 +9198,6 @@ public final class PinPlaylistPatch {
                 );
 
         if (visualToSource == null) {
-            Log.d(TAG, "PinTogglePositionMapRefreshSkipped"
-                    + " reason=mapUnavailable"
-                    + " sourceCount=" + sourceCount);
             return false;
         }
 
@@ -9910,16 +9254,6 @@ public final class PinPlaylistPatch {
             );
         }
 
-        Log.d(TAG, "PinTogglePositionMapRefreshed"
-                + " adapterIdentity="
-                + identityString(visualAdapter)
-                + " sourceCount=" + sourceCount
-                + " notifications=" + notifications
-                + ",finalFullNotify=" + finalFullNotify
-                + " visualToSource="
-                + java.util.Arrays.toString(
-                visualToSource
-        ));
 
         /*
          * Reaching this point means the position map was rebuilt and installed.
@@ -9965,9 +9299,6 @@ public final class PinPlaylistPatch {
                 stablePrebindKeys.remove(adapter);
             }
 
-            Log.d(TAG, "StableDelegateLiveRestore"
-                    + " total=" + total
-                    + " notifications=" + notifications);
             return true;
         }
 
@@ -10023,10 +9354,6 @@ public final class PinPlaylistPatch {
                 : readFieldByName(delegate, "b");
 
         if (!"bdmq".equals(objectTypeName(delegateAdapter))) {
-            Log.d(TAG, "StableDelegatePrebindSkipped"
-                    + " reason=delegateUnavailable"
-                    + " delegateType="
-                    + objectTypeName(delegateAdapter));
             return;
         }
 
@@ -10034,10 +9361,6 @@ public final class PinPlaylistPatch {
         Integer sourceCount = invokeIntNoArg(sourceAdapter, "a");
 
         if (sourceCount == null || sourceCount != total) {
-            Log.d(TAG, "StableDelegatePrebindSkipped"
-                    + " reason=countMismatch"
-                    + " total=" + total
-                    + " sourceCount=" + sourceCount);
             return;
         }
 
@@ -10049,9 +9372,6 @@ public final class PinPlaylistPatch {
         );
 
         if (visualToSource == null) {
-            Log.d(TAG, "StableDelegatePrebindSkipped"
-                    + " reason=sourceMapUnavailable"
-                    + " total=" + total);
             return;
         }
 
@@ -10139,12 +9459,6 @@ public final class PinPlaylistPatch {
             notifications = "prebind";
         }
 
-        Log.d(TAG, "StableDelegatePrebindInstalled"
-                + " total=" + total
-                + " pinOrder=" + pinOrder
-                + " notifications=" + notifications
-                + " visualToSource="
-                + java.util.Arrays.toString(visualToSource));
     }
 
     @Nullable
@@ -10421,14 +9735,6 @@ public final class PinPlaylistPatch {
                     );
                 }
 
-                Log.d(TAG, "PreSubmitOrderedSourceBatch"
-                        + " size=" + expectedSize
-                        + " sourceIndices=" + sourceIndices
-                        + " sourceTypes=" + sourceTypes
-                        + " sourceIdentities="
-                        + sourceIdentities
-                        + " renderInfoIdentities="
-                        + renderInfoIdentities);
 
                 return ordered;
             }
@@ -10846,22 +10152,6 @@ public final class PinPlaylistPatch {
                         if (sample.size() >= 8) break;
                     }
 
-                    Log.d(TAG, "PreSubmitDirectSourceRow"
-                            + " position=" + position
-                            + " sourceIndex="
-                            + source.sourceIndex
-                            + " sourceType="
-                            + objectTypeName(
-                            source.sourceObject
-                    )
-                            + " playlistId=" + playlistId
-                            + " identitySource="
-                            + identitySource
-                            + " canonicalIds="
-                            + persistentIds
-                            + " matchedSignature="
-                            + matchedSignature
-                            + " strings=" + sample);
                 }
             }
 
@@ -10895,29 +10185,10 @@ public final class PinPlaylistPatch {
                         && distinctIds.size() == expected
                         && !pinnedPresent.isEmpty();
 
-        Log.d(TAG, "PreSubmitDirectSourceSummary"
-                + " total=" + renderInfos.size()
-                + " capturedSourceObjects="
-                + capturedSourceObjects
-                + " expected=" + expected
-                + " required=" + requiredPlaylistRows
-                + " mapped=" + mapped.size()
-                + " canonicalMatches="
-                + canonicalMatches
-                + " signatureMatches="
-                + signatureMatches
-                + " ambiguous=" + ambiguous
-                + " pinnedPresent=" + pinnedPresent);
 
         if (ambiguous
                 || (!enoughForFirstLoad
                 && !completeKnownLibrary)) {
-            Log.d(TAG, "PreSubmitDirectSourceSkipped"
-                    + " expected=" + expected
-                    + " mapped=" + mapped.size()
-                    + " distinct=" + distinctIds.size()
-                    + " ambiguous=" + ambiguous
-                    + " pinnedPresent=" + pinnedPresent);
             return null;
         }
 
@@ -11106,10 +10377,6 @@ public final class PinPlaylistPatch {
     ) {
         if (!deferredBindHookLogged) {
             deferredBindHookLogged = true;
-            Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
-                    + " bindCompletionHook=true"
-                    + " adapterType=" + objectTypeName(adapter)
-                    + " holderType=" + objectTypeName(holder));
         }
 
         if (holder == null || !isFeatureEnabled()) {
@@ -11683,13 +10950,6 @@ public final class PinPlaylistPatch {
             if (boundRowNoIdLogCount < 40
                     && items.size() >= 10) {
                 boundRowNoIdLogCount++;
-                Log.d(TAG, "BoundLibraryRowNoId"
-                        + " scheduledPosition=" + scheduledPosition
-                        + " total=" + items.size()
-                        + " stableRowId=" + stableId
-                        + " candidateId=" + candidatePlaylistId
-                        + " rowSignature=" + rowSignature
-                        + " rowText=" + rowText);
             }
             return;
         }
@@ -11702,18 +10962,6 @@ public final class PinPlaylistPatch {
 
         if (boundRowLogCount < 120) {
             boundRowLogCount++;
-            Log.d(TAG, "BoundLibraryRow"
-                    + " scheduledPosition=" + scheduledPosition
-                    + " total=" + items.size()
-                    + " stableRowId=" + stableId
-                    + " playlistId=" + playlistId
-                    + " candidateId=" + candidatePlaylistId
-                    + " identitySource="
-                    + (playlistId.equals(candidatePlaylistId)
-                    ? "byhm"
-                    : "rowSignature")
-                    + " rowSignature=" + rowSignature
-                    + " rowText=" + rowText);
         }
 
         if (context != null
@@ -11746,11 +10994,6 @@ public final class PinPlaylistPatch {
                 if (adapterProxyFactoryInstallLogCount < 80) {
                     adapterProxyFactoryInstallLogCount++;
 
-                    Log.d(TAG, "PostBindPhysicalReorderSkipped"
-                            + " reason=positionMapActive"
-                            + " adapterIdentity="
-                            + identityString(adapter)
-                            + " total=" + items.size());
                 }
             } else {
                 boolean mappingComplete =
@@ -11822,10 +11065,6 @@ public final class PinPlaylistPatch {
                     && !knownSignature.equals(rowSignature)) {
                 if (rowIdentityConflictLogCount < 30) {
                     rowIdentityConflictLogCount++;
-                    Log.d(TAG, "Rejected stale bound-row playlist id"
-                            + " candidateId=" + candidatePlaylistId
-                            + " knownSignature=" + knownSignature
-                            + " observedSignature=" + rowSignature);
                 }
                 return null;
             }
@@ -12149,10 +11388,6 @@ public final class PinPlaylistPatch {
              */
             if (stableRowRemapConflictLogCount < 40) {
                 stableRowRemapConflictLogCount++;
-                Log.d(TAG, "Rejected conflicting stable-row remap"
-                        + " stableRowId=" + stableId
-                        + " existingId=" + existing
-                        + " observedId=" + playlistId);
             }
 
             return existing;
@@ -12234,9 +11469,6 @@ public final class PinPlaylistPatch {
 
                 }
 
-                Log.d(TAG, "Captured Library native order"
-                        + " total=" + current.size()
-                        + " ids=" + current);
             }
         }
     }
@@ -12373,9 +11605,6 @@ public final class PinPlaylistPatch {
         boolean remapNotify =
                 invokeAdapterFullRefresh(adapter);
 
-        Log.d(TAG, "Detected Library order change during bind suppression"
-                + " remapNotify=" + remapNotify
-                + " nativeOrder=" + currentOrder);
     }
 
     private static boolean isExpectedPlaylistMappingComplete(
@@ -12496,11 +11725,6 @@ public final class PinPlaylistPatch {
                 adapter,
                 list.size()
         )) {
-            Log.d(TAG, "PostBindPhysicalReorderSkipped"
-                    + " reason=positionMapActiveAtApply"
-                    + " adapterIdentity="
-                    + identityString(adapter)
-                    + " total=" + list.size());
             return;
         }
 
@@ -12715,10 +11939,6 @@ public final class PinPlaylistPatch {
                         stableIdsForItems(desired)
                 );
             }
-            Log.d(TAG, "Pinned Library order already virtualized"
-                    + " total=" + list.size()
-                    + " pinOrder=" + pinnedOrder
-                    + " playlistSlots=" + playlistSlots);
             refreshVisiblePinIndicators(adapter);
             postSignaturePinIndicatorRefresh(adapter);
             return;
@@ -12855,20 +12075,6 @@ public final class PinPlaylistPatch {
             fallbackFullNotify = invokeAdapterFullRefresh(adapter);
         }
 
-        Log.d(TAG, "Applied pinned Library order"
-                + " total=" + list.size()
-                + " pinnedRows=" + pinned.size()
-                + " pinnedStableIds=" + pinnedStableIds
-                + " pinOrder=" + pinnedOrder
-                + " playlistSlots=" + playlistSlots
-                + " bindCaptureSuppressedMs=150"
-                + " nativeMoveNotifications="
-                + nativeMoveNotifications
-                + " usedFallbackMove=" + usedFallbackMove
-                + " fallbackMoveNotifications="
-                + fallbackMoveNotifications
-                + " fallbackFullNotify=" + fallbackFullNotify
-                + " order=" + applied);
 
         refreshVisiblePinIndicators(adapter);
         postSignaturePinIndicatorRefresh(adapter);
@@ -13124,8 +12330,6 @@ public final class PinPlaylistPatch {
 
             if (resolved != null
                     && !resolved.equals(candidate)) {
-                Log.d(TAG, "FlyoutPageIdentityBridge"
-                        + " rejectedAmbiguousIds=" + candidates);
                 return null;
             }
 
@@ -13220,10 +12424,6 @@ public final class PinPlaylistPatch {
         );
 
         if (PinStore.isSupportedPlaylistId(playlistId)) {
-            Log.d(TAG, "FlyoutPageIdentityBridge"
-                    + " source=canonicalSourceGraph"
-                    + " playlistId=" + playlistId
-                    + " sourceType=" + objectTypeName(sourceObject));
             return playlistId;
         }
 
@@ -13232,10 +12432,6 @@ public final class PinPlaylistPatch {
         playlistId = findOnlySupportedPlaylistId(viewIds);
 
         if (PinStore.isSupportedPlaylistId(playlistId)) {
-            Log.d(TAG, "FlyoutPageIdentityBridge"
-                    + " source=viewCarrier"
-                    + " playlistId=" + playlistId
-                    + " sourceType=" + objectTypeName(sourceObject));
         }
 
         return playlistId;
@@ -13267,10 +12463,6 @@ public final class PinPlaylistPatch {
         }
         if (!flyoutViewEntryLogged) {
             flyoutViewEntryLogged = true;
-            Log.d(TAG, "DiagnosticBuild=" + BUILD_ID
-                    + " flyoutViewHook=true"
-                    + " viewType=" + objectTypeName(clickedView)
-                    + " sourceType=" + objectTypeName(sourceObject));
         }
 
         clearActiveFlyoutRowContext();
@@ -13284,7 +12476,6 @@ public final class PinPlaylistPatch {
                 sourceObject
         );
         if (!PinStore.isSupportedPlaylistId(playlistId)) {
-            Log.d(TAG, "FlyoutRowKey playlistId unavailable");
             return;
         }
 
@@ -13312,8 +12503,6 @@ public final class PinPlaylistPatch {
             }
         }
 
-        Log.d(TAG, "FlyoutRowKey RecyclerView not found"
-                + " playlistId=" + playlistId);
     }
 
     private static void diagnoseFlyoutRecyclerRow(
@@ -13338,12 +12527,6 @@ public final class PinPlaylistPatch {
         Object listObject = readFieldByName(controller, "b");
 
         if (!(listObject instanceof List)) {
-            Log.d(TAG, "FlyoutRowKey backing list unavailable"
-                    + " playlistId=" + playlistId
-                    + " recyclerType=" + objectTypeName(recycler)
-                    + " adapterType=" + objectTypeName(adapter)
-                    + " controllerType=" + objectTypeName(controller)
-                    + " listType=" + objectTypeName(listObject));
             return;
         }
 
@@ -13421,21 +12604,6 @@ public final class PinPlaylistPatch {
             rememberAdapterNativeOrder(adapter, items);
         }
 
-        Log.d(TAG, "FlyoutRowKey"
-                + " playlistId=" + playlistId
-                + " adapterType=" + objectTypeName(adapter)
-                + " total=" + items.size()
-                + " childIndex=" + childIndex
-                + " rowType=" + objectTypeName(directChild)
-                + " rowText=" + collectRowText(directChild)
-                + " holderType=" + objectTypeName(holder)
-                + " recyclerPositions=" + recyclerPositions
-                + " holderPositions=" + holderPositions
-                + " holderFields=" + holderPrimitiveFields
-                + " stableIds=" + stableIds
-                + " resolvedPosition=" + resolvedPosition
-                + " resolvedSourcePosition=" + resolvedSourcePosition
-                + " stableRowId=" + stableRowId);
     }
 
     @Nullable
@@ -13522,12 +12690,6 @@ public final class PinPlaylistPatch {
                         Object value = field.get(layoutParams);
 
                         if (isViewHolderObject(value)) {
-                            Log.d(TAG, "FlyoutRowHolder"
-                                    + " source=layoutParams"
-                                    + " field=" + current.getName()
-                                    + "." + field.getName()
-                                    + " valueType="
-                                    + value.getClass().getName());
                             return value;
                         }
                     } catch (Throwable ignored) {
@@ -13561,12 +12723,6 @@ public final class PinPlaylistPatch {
                     Object value = method.invoke(recycler, directChild);
 
                     if (isViewHolderObject(value)) {
-                        Log.d(TAG, "FlyoutRowHolder"
-                                + " source=method"
-                                + " method=" + current.getName()
-                                + "." + method.getName()
-                                + " valueType="
-                                + value.getClass().getName());
                         return value;
                     }
                 } catch (Throwable ignored) {
@@ -13929,7 +13085,6 @@ public final class PinPlaylistPatch {
         if (id == null) return null;
         if (capturedAt <= 0L) return null;
         if (now - capturedAt > ACTIVE_FLYOUT_ID_TTL_MS) {
-            Log.d(TAG, "Discarded stale active flyout playlist id=" + id);
             return null;
         }
 
@@ -14181,13 +13336,11 @@ public final class PinPlaylistPatch {
             Set<String> candidates
     ) {
         if (candidates == null || candidates.isEmpty()) {
-            Log.d(TAG, prefix + "[none]");
             return;
         }
 
         int index = 0;
         for (String candidate : candidates) {
-            Log.d(TAG, prefix + "[" + index + "]=" + candidate);
             index++;
         }
     }
