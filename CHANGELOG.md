@@ -1,3 +1,9 @@
+## [1.1.0-dev.21](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.20...v1.1.0-dev.21) (2026-08-26)
+
+### Features
+
+* **bunny:** add Bunny Discord client patch ([0672bf6](https://github.com/Seobject/Seobject-patches/commit/0672bf6e973789f6984aa6b9a5dfe5ad315b35e4))
+
 ## [1.1.0-dev.20](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.19...v1.1.0-dev.20) (2026-08-06)
 
 ### Bug Fixes
