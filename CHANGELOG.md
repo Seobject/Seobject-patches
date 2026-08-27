@@ -1,3 +1,9 @@
+## [1.1.1](https://github.com/Seobject/Seobject-patches/compare/v1.1.0...v1.1.1) (2026-08-27)
+
+### Bug Fixes
+
+* **bunny:** finalize theme creator and chat backgrounds ([310bcb8](https://github.com/Seobject/Seobject-patches/commit/310bcb85d7f28a36137df52433765c2d84a15e5d))
+
 ## [1.1.0](https://github.com/Seobject/Seobject-patches/compare/v1.0.7...v1.1.0) (2026-08-27)
 
 ### Features
