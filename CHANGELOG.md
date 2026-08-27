@@ -1,3 +1,9 @@
+## [1.1.0-dev.23](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.22...v1.1.0-dev.23) (2026-08-27)
+
+### Features
+
+* publish Bunny client and current patches ([1da9a82](https://github.com/Seobject/Seobject-patches/commit/1da9a82775bbca2b97c734107d8a590eb501536f))
+
 ## [1.1.0-dev.22](https://github.com/Seobject/Seobject-patches/compare/v1.1.0-dev.21...v1.1.0-dev.22) (2026-08-26)
 
 ### Bug Fixes
