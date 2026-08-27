@@ -7,14 +7,23 @@ final class StartupRecoveryPolicy {
     static boolean begin(RecoveryState state) {
         if (state.startupInProgress && !state.startupHealthy) {
             state.consecutiveFailures++;
-            state.recoveryLatch = true;
         }
-        boolean retry = state.tryNormalOnce;
-        boolean safeMode = !retry && (state.temporarySafeModeNextLaunch || state.recoveryLatch);
-        // Consume before plugin initialization. Current-session state is held by
-        // RecoveryManager and survives for the lifetime of this process.
+
+        /*
+         * BUNNY_SAFE_MODE_SELECTION_V2
+         *
+         * Failed-start history is diagnostic only. It must not enable Safe
+         * Mode. Native Safe Mode here is exclusively the launcher one-shot;
+         * Bunny's persistent Safe Mode setting is evaluated separately.
+         */
+        boolean safeMode = state.temporarySafeModeNextLaunch;
+
         state.temporarySafeModeNextLaunch = false;
+
+        // Migrate/neutralize any recovery latch left by older builds.
+        state.recoveryLatch = false;
         state.tryNormalOnce = false;
+
         state.startupInProgress = false;
         state.startupHealthy = false;
         state.session++;

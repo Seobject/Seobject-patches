@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Bundle;
 import android.util.Log;
 
 import app.morphe.extension.discord.bunny.launcher.BunnyShortcutActivity;
@@ -61,13 +62,36 @@ public final class RecoveryManager {
 
     private RecoveryManager() {}
 
-    public static void onActivityCreate(Activity activity) {
+    public static void onActivityCreate(
+            Activity activity,
+            Bundle savedInstanceState
+    ) {
         if (activity == null) return;
 
-        BunnyShortcutActivity.dispatch(
-                activity,
-                activity.getIntent()
-        );
+        boolean shortcutHandled =
+                BunnyShortcutActivity.dispatch(
+                        activity,
+                        activity.getIntent()
+                );
+
+        /*
+         * BUNNY_TEMP_SAFE_MODE_ONE_LAUNCH_V1
+         *
+         * A temporary Safe Mode session lives for the Android process.
+         * If Android keeps that process after the task is closed, a later
+         * fresh launcher open must restart into a normal Bunny bootstrap.
+         *
+         * savedInstanceState != null means Android is recreating the same
+         * Activity (for example rotation/configuration), so Safe Mode stays.
+         * Persistent Safe Mode is a separate Bunny setting and is not modified here.
+         */
+        if (
+                !shortcutHandled
+                        && savedInstanceState == null
+                        && restartNormalAfterTemporarySafeMode(activity)
+        ) {
+            return;
+        }
 
         activityRef =
                 new WeakReference<>(activity);
@@ -88,6 +112,36 @@ public final class RecoveryManager {
         }
 
         BunnyShortcutPublisher.publish(activity);
+    }
+
+    private static boolean restartNormalAfterTemporarySafeMode(
+            Activity activity
+    ) {
+        synchronized (LOCK) {
+            if (
+                    !sessionInitialized
+                            || !sessionSafeMode
+                            || state == null
+            ) {
+                return false;
+            }
+
+            state.temporarySafeModeNextLaunch = false;
+            state.recoveryLatch = false;
+            state.tryNormalOnce = false;
+            state.startupInProgress = false;
+            state.startupHealthy = true;
+            state.currentPlugin = null;
+            state.initializingPlugins.clear();
+            store.write(state);
+        }
+
+        appendEvent(
+                "temporary-safe-mode-exit",
+                eventDetails("reason", "fresh-normal-launch")
+        );
+
+        return BunnyShortcutActivity.restartAtFreshBootstrap(activity);
     }
 
     public static JSONObject loaderState(Context candidate) {
@@ -818,9 +872,23 @@ public final class RecoveryManager {
     public static void requestTemporarySafeModeNextLaunch(Context candidate) {
         ensure(candidate);
         synchronized (LOCK) {
+            /*
+             * BUNNY_TEMP_SAFE_MODE_ONE_SHOT_V2
+             *
+             * Launcher Safe Mode is a one-shot request. It must never promote
+             * crash history into persistent Safe Mode and must never mutate
+             * Bunny's durable Safe Mode preference.
+             */
+            state.startupInProgress = false;
+            state.startupHealthy = true;
+            state.currentPlugin = null;
+            state.initializingPlugins.clear();
+            state.recoveryLatch = false;
+            state.tryNormalOnce = false;
             state.temporarySafeModeNextLaunch = true;
             store.write(state);
         }
+        Log.i(TAG, "TEMPORARY_SAFE_MODE_NEXT_LAUNCH_REQUESTED");
     }
 
     public static boolean isSessionInitialized() {

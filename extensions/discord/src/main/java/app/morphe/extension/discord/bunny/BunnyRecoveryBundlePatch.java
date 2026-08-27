@@ -234,10 +234,21 @@ final class BunnyRecoveryBundlePatch {
     );
     var statusRows = recoveryStatus ? [
       /* @__PURE__ */ jsx(TableRow, {
-        label: "Current startup",
-        subLabel: recoveryStatus.safeMode ? "Bunny add-ons are bypassed for this launch." : "Bunny started normally.",
+        label: "Current mode",
+        subLabel: recoveryStatus.safeMode
+          ? "Temporary Safe Mode is active for this launch."
+          : "Bunny started normally.",
         icon: /* @__PURE__ */ jsx(TableRow.Icon, { source: findAssetId(recoveryStatus.safeMode ? "ShieldIcon" : "Check") }),
-        trailing: /* @__PURE__ */ jsx(TableRow.TrailingText, { text: recoveryStatus.safeMode ? "Safe Mode" : "Normal" })
+        trailing: /* @__PURE__ */ jsx(Text, {
+          variant: "text-md/normal",
+          color: "text-muted",
+          style: {
+            minWidth: 84,
+            flexShrink: 0,
+            textAlign: "right"
+          },
+          children: recoveryStatus.safeMode ? "Safe Mode" : "Normal"
+        })
       }, "recovery-current"),
       /* @__PURE__ */ jsx(TableRow, {
         arrow: true,

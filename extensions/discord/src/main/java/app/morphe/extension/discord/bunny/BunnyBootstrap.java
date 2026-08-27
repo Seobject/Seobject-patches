@@ -162,8 +162,11 @@ public final class BunnyBootstrap {
     }
 
     /** Injection point: com.discord.react_activities.ReactActivity.onCreate(Bundle). */
-    public static void onActivityCreate(Activity activity) {
-        RecoveryManager.onActivityCreate(activity);
+    public static void onActivityCreate(
+            Activity activity,
+            android.os.Bundle savedInstanceState
+    ) {
+        RecoveryManager.onActivityCreate(activity, savedInstanceState);
         if (activity != null) {
             bunnyFontContext = activity.getApplicationContext();
         }
@@ -380,6 +383,7 @@ public final class BunnyBootstrap {
                     && source.contains("BUNNY_RELEASE_FONT_IMPORT_MODAL_V1")
                     && source.contains("BUNNY_SEOBJECT_GITHUB_SAFE_LINK_V1")
                     && source.contains("BUNNY_FONT_POPUP_BUTTONS_DISMISS_V1")
+                    && source.contains("BUNNY_SAFE_MODE_SETTINGS_BOOTSTRAP_CYCLE_GUARD_V1")
                     && source.contains("BUNNY_THEME_PHASE5L_ADVANCED_PICKER_V1")
                     && source.contains("label: \"Floating Background\"")
                     && source.contains("bunnyThemeListIdentity")
@@ -559,6 +563,34 @@ public final class BunnyBootstrap {
                 patchFreshStorageWrapSync(
                         patched
                 );
+
+        /*
+         * BUNNY_SAFE_MODE_SETTINGS_BOOTSTRAP_CYCLE_GUARD_V1
+         *
+         * DeveloperExperimentStore.isDeveloper can be queried while
+         * init_storage() is still executing. The archived Bunny getter
+         * force-initialized settings there, which re-entered init_settings()
+         * before createMMKVBackend had been assigned. Safe Mode changes the
+         * startup ordering enough to hit that cycle deterministically.
+         *
+         * During that narrow bootstrap window, developer mode safely defaults
+         * to false. Once Bunny settings exists, the live getter reads the real
+         * setting on every access.
+         */
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
+                "          if (property === \"isDeveloper\") {\n" +
+                        "            var { settings: settings2 } = (init_settings(), __toCommonJS(settings_exports));\n" +
+                        "            return settings2.enableDiscordDeveloperSettings ?? false;\n" +
+                        "          }\n",
+                "          if (property === \"isDeveloper\") {\n" +
+                        "            /* BUNNY_SAFE_MODE_SETTINGS_BOOTSTRAP_CYCLE_GUARD_V1 */\n" +
+                        "            if (typeof settings === \"undefined\" || settings == null) return false;\n" +
+                        "            return settings.enableDiscordDeveloperSettings ?? false;\n" +
+                        "          }\n",
+                "Bunny Safe Mode settings bootstrap cycle guard"
+        );
+
         /*
          * Discord compatibility:
          * isolate Bunny's legacy theme patches so one unsupported hook does

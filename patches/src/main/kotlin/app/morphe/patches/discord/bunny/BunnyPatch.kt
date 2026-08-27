@@ -227,7 +227,7 @@ val bunnyPatch = bytecodePatch(
          */
         DiscordReactActivityOnCreateFingerprint.method.addInstruction(
             0,
-            "invoke-static/range {p0 .. p0}, $EXTENSION_CLASS->onActivityCreate(Landroid/app/Activity;)V",
+            "invoke-static/range {p0 .. p1}, $EXTENSION_CLASS->onActivityCreate(Landroid/app/Activity;Landroid/os/Bundle;)V",
         )
 
 ReactInstanceLoadJSBundleFingerprint.method.addInstruction(
