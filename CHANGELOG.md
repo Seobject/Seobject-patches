@@ -1,3 +1,9 @@
+## [1.2.0-dev.4](https://github.com/Seobject/Seobject-patches/compare/v1.2.0-dev.3...v1.2.0-dev.4) (2026-08-28)
+
+### Bug Fixes
+
+* **bunny:** publish current dev snapshot ([6d13e68](https://github.com/Seobject/Seobject-patches/commit/6d13e681a2068da7badc475f78a91f1670f497e8))
+
 ## [1.2.0-dev.3](https://github.com/Seobject/Seobject-patches/compare/v1.2.0-dev.2...v1.2.0-dev.3) (2026-08-28)
 
 ### Bug Fixes

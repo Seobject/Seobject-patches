@@ -5,7 +5,7 @@ Random QoL patches
 ## 🩹 Patches list
 
 <!-- PATCHES_START -->
-> **[v1.2.0-dev.3](https://github.com/Seobject/Seobject-patches/releases/tag/v1.2.0-dev.3)**&nbsp;&nbsp;&bull;&nbsp;&nbsp;2 patches total
+> **[v1.2.0-dev.4](https://github.com/Seobject/Seobject-patches/releases/tag/v1.2.0-dev.4)**&nbsp;&nbsp;&bull;&nbsp;&nbsp;2 patches total
 
 <details>
 <summary>📦 Discord&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
