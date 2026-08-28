@@ -1,3 +1,9 @@
+## [1.1.2](https://github.com/Seobject/Seobject-patches/compare/v1.1.1...v1.1.2) (2026-08-28)
+
+### Bug Fixes
+
+* **bunny:** stabilize fresh theme lifecycle ([a1e1e47](https://github.com/Seobject/Seobject-patches/commit/a1e1e47af00343bc884797bb55c56b3a97f3f6ce))
+
 ## [1.1.1](https://github.com/Seobject/Seobject-patches/compare/v1.1.0...v1.1.1) (2026-08-27)
 
 ### Bug Fixes
