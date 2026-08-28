@@ -69,6 +69,20 @@ internal object DiscordCustomFontFamilyOverrideFingerprint : Fingerprint(
     },
 )
 
+/*
+ * BUNNY_STATUS_BAR_RN_STYLE_OWNER_V5
+ *
+ * Exact React Native boundary used by StatusBar.setBarStyle(...).
+ */
+internal object ReactStatusBarModuleSetStyleFingerprint : Fingerprint(
+    definingClass = "Lcom/facebook/react/modules/statusbar/StatusBarModule;",
+    name = "setStyle",
+    returnType = "V",
+    parameters = listOf(
+        "Ljava/lang/String;",
+    ),
+)
+
 internal object ReactIntentModuleOpenUrlFingerprint : Fingerprint(
     definingClass = "Lcom/facebook/react/modules/intent/IntentModule;",
     name = "openURL",
@@ -228,6 +242,31 @@ val bunnyPatch = bytecodePatch(
         DiscordReactActivityOnCreateFingerprint.method.addInstruction(
             0,
             "invoke-static/range {p0 .. p1}, $EXTENSION_CLASS->onActivityCreate(Landroid/app/Activity;Landroid/os/Bundle;)V",
+        )
+
+        /*
+         * BUNNY_STATUS_BAR_RN_STYLE_OWNER_V5
+         *
+         * p1 is React Native's requested style string. Rewrite it to Bunny's
+         * remembered luminance decision before RN schedules the window update.
+         */
+        val bunnyStatusBarStyleMethod =
+            ReactStatusBarModuleSetStyleFingerprint.method
+
+        check(
+            bunnyStatusBarStyleMethod.implementation != null
+        ) {
+            "StatusBarModule.setStyle has no implementation"
+        }
+
+        bunnyStatusBarStyleMethod.addInstruction(
+            0,
+            "invoke-static/range {p1 .. p1}, $EXTENSION_CLASS->resolveBunnyHostStatusBarStyle(Ljava/lang/String;)Ljava/lang/String;",
+        )
+
+        bunnyStatusBarStyleMethod.addInstruction(
+            1,
+            "move-result-object p1",
         )
 
 ReactInstanceLoadJSBundleFingerprint.method.addInstruction(

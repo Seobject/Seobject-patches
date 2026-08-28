@@ -173,6 +173,9 @@ public final class BunnyBootstrap {
         if (activity == null) return;
 
         activityReference = new WeakReference<>(activity);
+        registerBunnyStatusBarLifecycle(activity);
+        reapplyBunnyStatusBarIconAppearance(activity);
+
         Context context = activity.getApplicationContext();
         if (context == null) context = activity;
         appContext = context;
@@ -380,6 +383,9 @@ public final class BunnyBootstrap {
                     && source.contains("BUNNY_THEME_CREATOR_PHASE_5N_OWNER_BOUND")
                     && source.contains("BUNNY_THEME_CREATOR_PHASE_5P_NATIVE_ADVANCED")
                     && source.contains("BUNNY_THEME_CREATOR_SHIP_BASIC_ONLY")
+                    && source.contains("BUNNY_FRESH_STORAGE_PENDING_MUTATION_REPLAY_V3")
+                    && source.contains("BUNNY_THEME_REMOVE_STALE_GUARD_V1")
+                    && source.contains("BUNNY_THEME_CARD_STALE_TOGGLE_GUARD_V1")
                     && source.contains("BUNNY_RELEASE_FONT_IMPORT_MODAL_V1")
                     && source.contains("BUNNY_SEOBJECT_GITHUB_SAFE_LINK_V1")
                     && source.contains("BUNNY_FONT_POPUP_BUTTONS_DISMISS_V1")
@@ -387,6 +393,8 @@ public final class BunnyBootstrap {
                     && source.contains("BUNNY_THEME_PHASE5L_ADVANCED_PICKER_V1")
                     && source.contains("label: \"Floating Background\"")
                     && source.contains("bunnyThemeListIdentity")
+                    && source.contains("BUNNY_THEME_INLINE_ORDER_EDIT_V5")
+                    && source.contains("BUNNY_FONT_INLINE_ORDER_EDIT_V6")
                     && source.contains("HOME_BACKGROUND: pair(bg)")
                     && source.contains("PANEL_BG: pair(bg)")
                     && source.contains("BACKGROUND_BASE_LOWEST: pair(bg)")
@@ -561,6 +569,11 @@ public final class BunnyBootstrap {
 
         patched =
                 patchFreshStorageWrapSync(
+                        patched
+                );
+
+        patched =
+                patchFreshThemeRemovalResilience(
                         patched
                 );
 
@@ -3643,154 +3656,230 @@ public final class BunnyBootstrap {
          * When Manual is the active mode, show a dedicated Reorder button.
          * Reordering writes the exact persistent manual order immediately.
          */
+        /*
+         * BUNNY_THEME_INLINE_ORDER_EDIT_V5
+         *
+         * Theme ordering is edited directly on the main Themes screen.
+         * The existing ThemeCard remains the rendered card; edit mode only
+         * adds a compact order footer to that real card.
+         */
         patched = replaceBundleStructureExactlyOnce(
                 patched,
                 "  function ThemeCard({ item: theme }) {",
                 """
-  function BunnyThemeReorderPage() {
-    useProxy(settings);
-    useProxy(themes);
-
-    var items =
-      bunnyThemeManualItems();
+  function BunnyThemeOrderControl({
+    direction,
+    disabled,
+    onPress,
+    label
+  }) {
+    var isUp =
+      direction === "up";
 
     return /* @__PURE__ */ jsx(
-      import_react_native24.ScrollView,
+      Button,
       {
-        contentContainerStyle: {
-          paddingHorizontal: 12,
-          paddingTop: 12,
-          paddingBottom: 48,
-          gap: 8
-        },
-        children: [
-          /* @__PURE__ */ jsx(Text, {
-            variant: "text-md/medium",
-            color: "text-muted",
-            style: {
-              marginBottom: 4
-            },
-            children:
-              "Arrange themes in the exact order used by Manual sorting. Changes save immediately."
-          }),
-          ...items.map(
-            (theme, index) =>
-              /* @__PURE__ */ jsx(
-                Card,
-                {
-                  children: /* @__PURE__ */ jsxs(
-                    import_react_native24.View,
-                    {
-                      style: {
-                        gap: 10
-                      },
-                      children: [
-                        /* @__PURE__ */ jsxs(
-                          import_react_native24.View,
-                          {
-                            style: {
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10
-                            },
-                            children: [
-                              /* @__PURE__ */ jsx(
-                                Text,
-                                {
-                                  variant: "text-md/semibold",
-                                  color: "text-muted",
-                                  style: {
-                                    minWidth: 28
-                                  },
-                                  children:
-                                    String(index + 1)
-                                }
-                              ),
-                              /* @__PURE__ */ jsx(
-                                Text,
-                                {
-                                  variant: "heading-md/semibold",
-                                  numberOfLines: 2,
-                                  style: {
-                                    flex: 1,
-                                    minWidth: 0
-                                  },
-                                  children:
-                                    theme?.data?.name ??
-                                    theme?.id ??
-                                    "Unnamed theme"
-                                }
-                              )
-                            ]
-                          }
-                        ),
-                        /* @__PURE__ */ jsxs(Stack, {
-                          direction: "horizontal",
-                          spacing: 8,
-                          children: [
-                            /* @__PURE__ */ jsx(Button, {
-                              size: "sm",
-                              variant: "secondary",
-                              text: "Top",
-                              disabled: index === 0,
-                              onPress: () =>
-                                bunnyMoveThemeOrder(
-                                  theme.id,
-                                  -items.length
-                                )
-                            }),
-                            /* @__PURE__ */ jsx(Button, {
-                              size: "sm",
-                              variant: "secondary",
-                              text: "Up",
-                              disabled: index === 0,
-                              onPress: () =>
-                                bunnyMoveThemeOrder(
-                                  theme.id,
-                                  -1
-                                )
-                            }),
-                            /* @__PURE__ */ jsx(Button, {
-                              size: "sm",
-                              variant: "secondary",
-                              text: "Down",
-                              disabled:
-                                index === items.length - 1,
-                              onPress: () =>
-                                bunnyMoveThemeOrder(
-                                  theme.id,
-                                  1
-                                )
-                            }),
-                            /* @__PURE__ */ jsx(Button, {
-                              size: "sm",
-                              variant: "secondary",
-                              text: "Bottom",
-                              disabled:
-                                index === items.length - 1,
-                              onPress: () =>
-                                bunnyMoveThemeOrder(
-                                  theme.id,
-                                  items.length
-                                )
-                            })
-                          ]
-                        })
-                      ]
-                    }
-                  )
-                },
-                theme.id
-              )
-          )
-        ]
+        size: "sm",
+        variant: "secondary",
+        text:
+          isUp
+            ? "↑"
+            : "↓",
+        disabled,
+        accessibilityLabel: label,
+        onPress
       }
     );
   }
 
-  function ThemeCard({ item: theme }) {
+  function ThemeCard({
+    item: theme,
+    bunnyOrderEditing = false
+  }) {
 """,
-                "Bunny Themes manual reorder page"
+                "Bunny real ThemeCard inline order mode"
+        );
+
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
+                """
+    var bunnyThemePreviewWithSource = /* @__PURE__ */ jsxs(import_react_native24.View, { style: { gap: 8 }, children: [bunnyThemeSourceBadge(bunnyThemeSource), bunnyThemePreview] });
+    return /* @__PURE__ */ jsx(AddonCard, {
+""",
+                """
+    var bunnyThemePreviewWithSource = /* @__PURE__ */ jsxs(import_react_native24.View, { style: { gap: 8 }, children: [bunnyThemeSourceBadge(bunnyThemeSource), bunnyThemePreview] });
+
+    var bunnyThemeOrderItems =
+      bunnyOrderEditing
+        ? bunnyThemeManualItems()
+        : [];
+
+    var bunnyThemeOrderIndex =
+      bunnyOrderEditing
+        ? bunnyThemeOrderItems.findIndex(
+            (candidate) =>
+              String(candidate?.id ?? "") ===
+              String(theme?.id ?? "")
+          )
+        : -1;
+
+    var bunnyThemeOrderFooter =
+      bunnyOrderEditing &&
+      bunnyThemeOrderIndex >= 0
+        ? /* @__PURE__ */ jsxs(
+            import_react_native24.View,
+            {
+              style: {
+                paddingTop: 8,
+                borderTopWidth: 1,
+                borderTopColor: "rgba(128,128,128,0.18)",
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12
+              },
+              children: [
+                /* @__PURE__ */ jsx(Text, {
+                  variant: "text-sm/semibold",
+                  color: "text-muted",
+                  children:
+                    "Position " +
+                    String(bunnyThemeOrderIndex + 1) +
+                    " of " +
+                    String(bunnyThemeOrderItems.length)
+                }),
+                /* @__PURE__ */ jsxs(
+                  import_react_native24.View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      gap: 6
+                    },
+                    children: [
+                      /* @__PURE__ */ jsx(
+                        BunnyThemeOrderControl,
+                        {
+                          direction: "up",
+                          disabled: bunnyThemeOrderIndex === 0,
+                          label:
+                            "Move " +
+                            String(theme?.data?.name ?? "theme") +
+                            " up",
+                          onPress: () =>
+                            bunnyMoveThemeOrder(
+                              theme.id,
+                              -1
+                            )
+                        }
+                      ),
+                      /* @__PURE__ */ jsx(
+                        BunnyThemeOrderControl,
+                        {
+                          direction: "down",
+                          disabled:
+                            bunnyThemeOrderIndex ===
+                            bunnyThemeOrderItems.length - 1,
+                          label:
+                            "Move " +
+                            String(theme?.data?.name ?? "theme") +
+                            " down",
+                          onPress: () =>
+                            bunnyMoveThemeOrder(
+                              theme.id,
+                              1
+                            )
+                        }
+                      )
+                    ]
+                  }
+                )
+              ]
+            }
+          )
+        : null;
+
+    return /* @__PURE__ */ jsx(AddonCard, {
+""",
+                "Bunny ThemeCard inline order footer model"
+        );
+
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
+                """
+      preview: /* @__PURE__ */ jsx(BunnyDiscordThemeDualPreview, { themeData: theme.data }),
+      bunnyThemeCard: true,
+      toggleType: !settings.safeMode?.enabled ? "radio" : void 0,
+""",
+                """
+      preview: /* @__PURE__ */ jsxs(
+        import_react_native24.View,
+        {
+          style: { gap: 8 },
+          children: [
+            /* @__PURE__ */ jsx(
+              BunnyDiscordThemeDualPreview,
+              { themeData: theme.data }
+            ),
+            bunnyThemeOrderFooter
+          ]
+        }
+      ),
+      bunnyThemeCard: true,
+      toggleType:
+        bunnyOrderEditing
+          ? void 0
+          : !settings.safeMode?.enabled
+            ? "radio"
+            : void 0,
+""",
+                "Bunny real ThemeCard inline order footer render"
+        );
+
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
+                "    var [bunnyThemeSection, setBunnyThemeSection] = React.useState(\"themes\");",
+                """
+    var [bunnyThemeSection, setBunnyThemeSection] = React.useState("themes");
+
+    /* BUNNY_THEME_INLINE_ORDER_EDIT_V5 */
+    var [
+      bunnyThemeOrderEditing,
+      setBunnyThemeOrderEditing
+    ] = React.useState(false);
+
+    React.useEffect(
+      () => {
+        if (!bunnyThemeOrderEditing)
+          return;
+
+        if (
+          settings.bunnyThemeSortMode !== "Manual" ||
+          bunnyThemeSection !== "themes"
+        ) {
+          setBunnyThemeOrderEditing(false);
+        }
+      },
+      [
+        settings.bunnyThemeSortMode,
+        bunnyThemeSection,
+        bunnyThemeOrderEditing
+      ]
+    );
+
+    var bunnyThemeListCard =
+      React.useCallback(
+        (cardProps) =>
+          /* @__PURE__ */ jsx(
+            ThemeCard,
+            {
+              ...cardProps,
+              bunnyOrderEditing: bunnyThemeOrderEditing
+            }
+          ),
+        [bunnyThemeOrderEditing]
+      );
+""",
+                "Bunny Themes inline order state"
         );
 
         patched = replaceBundleStructureExactlyOnce(
@@ -3801,190 +3890,273 @@ public final class BunnyBootstrap {
       ListHeaderComponent:
         settings.bunnyThemeSortMode === "Manual"
           ? () =>
-              /* @__PURE__ */ jsx(
+              /* @__PURE__ */ jsxs(
                 import_react_native24.View,
                 {
                   style: {
                     paddingTop: 8,
-                    paddingBottom: 4
+                    paddingBottom: 4,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12
                   },
-                  children: /* @__PURE__ */ jsx(Button, {
-                    size: "sm",
-                    variant: "secondary",
-                    text: "Reorder Manual",
-                    onPress: () =>
-                      bunnyThemeNavigation.push(
-                        "BUNNY_CUSTOM_PAGE",
-                        {
-                          title: "Reorder Themes",
-                          render: () =>
-                            /* @__PURE__ */ jsx(
-                              BunnyThemeReorderPage,
-                              {}
-                            )
-                        }
-                      )
-                  })
+                  children: [
+                    /* @__PURE__ */ jsx(Text, {
+                      variant: "text-sm/medium",
+                      color: "text-muted",
+                      children:
+                        bunnyThemeOrderEditing
+                          ? "Editing manual order"
+                          : "Manual order"
+                    }),
+                    /* @__PURE__ */ jsx(Button, {
+                      size: "sm",
+                      variant:
+                        bunnyThemeOrderEditing
+                          ? "primary"
+                          : "secondary",
+                      text:
+                        bunnyThemeOrderEditing
+                          ? "Done"
+                          : "Edit order",
+                      onPress: () =>
+                        setBunnyThemeOrderEditing(
+                          (editing) => !editing
+                        )
+                    })
+                  ]
                 }
               )
           : void 0,
       searchKeywords:
 """,
-                "Bunny Themes Manual-only reorder entry"
+                "Bunny Themes main-screen Edit order entry"
         );
 
         patched = replaceBundleStructureExactlyOnce(
                 patched,
+                "      CardComponent: ThemeCard,",
+                "      CardComponent: bunnyThemeListCard,",
+                "Bunny Themes real card edit-order wrapper"
+        );
+
+        /*
+         * BUNNY_FONT_INLINE_ORDER_EDIT_V6
+         *
+         * Fonts now use the same ordering interaction as Themes:
+         * edit directly on the main Fonts screen using the real FontCard.
+         */
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
                 "  function FontCard({ item: font }) {",
                 """
-  function BunnyFontReorderPage() {
-    useProxy(settings);
-    useProxy(fonts);
-
-    var items =
-      bunnyFontManualItems();
+  function BunnyFontOrderControl({
+    direction,
+    disabled,
+    onPress,
+    label
+  }) {
+    var isUp =
+      direction === "up";
 
     return /* @__PURE__ */ jsx(
-      import_react_native26.ScrollView,
+      Button,
       {
-        contentContainerStyle: {
-          paddingHorizontal: 12,
-          paddingTop: 12,
-          paddingBottom: 48,
-          gap: 8
-        },
-        children: [
-          /* @__PURE__ */ jsx(Text, {
-            variant: "text-md/medium",
-            color: "text-muted",
-            style: {
-              marginBottom: 4
-            },
-            children:
-              "Arrange fonts in the exact order used by Manual sorting. Changes save immediately."
-          }),
-          ...items.map(
-            (font, index) =>
-              /* @__PURE__ */ jsx(
-                Card,
-                {
-                  children: /* @__PURE__ */ jsxs(
-                    import_react_native26.View,
-                    {
-                      style: {
-                        gap: 10
-                      },
-                      children: [
-                        /* @__PURE__ */ jsxs(
-                          import_react_native26.View,
-                          {
-                            style: {
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10
-                            },
-                            children: [
-                              /* @__PURE__ */ jsx(
-                                Text,
-                                {
-                                  variant: "text-md/semibold",
-                                  color: "text-muted",
-                                  style: {
-                                    minWidth: 28
-                                  },
-                                  children:
-                                    String(index + 1)
-                                }
-                              ),
-                              /* @__PURE__ */ jsx(
-                                Text,
-                                {
-                                  variant: "heading-md/semibold",
-                                  numberOfLines: 2,
-                                  style: {
-                                    flex: 1,
-                                    minWidth: 0,
-                                    fontFamily:
-                                      bunnyPreviewFontFamily(
-                                        font,
-                                        "heading-md/semibold"
-                                      )
-                                  },
-                                  children:
-                                    font?.name ??
-                                    "Unnamed font"
-                                }
-                              )
-                            ]
-                          }
-                        ),
-                        /* @__PURE__ */ jsxs(Stack, {
-                          direction: "horizontal",
-                          spacing: 8,
-                          children: [
-                            /* @__PURE__ */ jsx(Button, {
-                              size: "sm",
-                              variant: "secondary",
-                              text: "Top",
-                              disabled: index === 0,
-                              onPress: () =>
-                                bunnyMoveFontOrder(
-                                  font.name,
-                                  -items.length
-                                )
-                            }),
-                            /* @__PURE__ */ jsx(Button, {
-                              size: "sm",
-                              variant: "secondary",
-                              text: "Up",
-                              disabled: index === 0,
-                              onPress: () =>
-                                bunnyMoveFontOrder(
-                                  font.name,
-                                  -1
-                                )
-                            }),
-                            /* @__PURE__ */ jsx(Button, {
-                              size: "sm",
-                              variant: "secondary",
-                              text: "Down",
-                              disabled:
-                                index === items.length - 1,
-                              onPress: () =>
-                                bunnyMoveFontOrder(
-                                  font.name,
-                                  1
-                                )
-                            }),
-                            /* @__PURE__ */ jsx(Button, {
-                              size: "sm",
-                              variant: "secondary",
-                              text: "Bottom",
-                              disabled:
-                                index === items.length - 1,
-                              onPress: () =>
-                                bunnyMoveFontOrder(
-                                  font.name,
-                                  items.length
-                                )
-                            })
-                          ]
-                        })
-                      ]
-                    }
-                  )
-                },
-                font.name
-              )
-          )
-        ]
+        size: "sm",
+        variant: "secondary",
+        text:
+          isUp
+            ? "↑"
+            : "↓",
+        disabled,
+        accessibilityLabel: label,
+        onPress
       }
     );
   }
 
-  function FontCard({ item: font }) {
+  function FontCard({
+    item: font,
+    bunnyOrderEditing = false
+  }) {
 """,
-                "Bunny Fonts manual reorder page"
+                "Bunny real FontCard inline order mode"
+        );
+
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
+                """
+    var selected = fonts.__selected === font.name;
+    return /* @__PURE__ */ jsx(Card, {
+""",
+                """
+    var selected = fonts.__selected === font.name;
+
+    var bunnyFontOrderItems =
+      bunnyOrderEditing
+        ? bunnyFontManualItems()
+        : [];
+
+    var bunnyFontOrderIndex =
+      bunnyOrderEditing
+        ? bunnyFontOrderItems.findIndex(
+            (candidate) =>
+              String(candidate?.name ?? "") ===
+              String(font?.name ?? "")
+          )
+        : -1;
+
+    var bunnyFontOrderFooter =
+      bunnyOrderEditing &&
+      bunnyFontOrderIndex >= 0
+        ? /* @__PURE__ */ jsxs(
+            import_react_native26.View,
+            {
+              style: {
+                paddingTop: 8,
+                borderTopWidth: 1,
+                borderTopColor: "rgba(128,128,128,0.18)",
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12
+              },
+              children: [
+                /* @__PURE__ */ jsx(Text, {
+                  variant: "text-sm/semibold",
+                  color: "text-muted",
+                  children:
+                    "Position " +
+                    String(bunnyFontOrderIndex + 1) +
+                    " of " +
+                    String(bunnyFontOrderItems.length)
+                }),
+                /* @__PURE__ */ jsxs(
+                  import_react_native26.View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      gap: 6
+                    },
+                    children: [
+                      /* @__PURE__ */ jsx(
+                        BunnyFontOrderControl,
+                        {
+                          direction: "up",
+                          disabled:
+                            bunnyFontOrderIndex === 0,
+                          label:
+                            "Move " +
+                            String(font?.name ?? "font") +
+                            " up",
+                          onPress: () =>
+                            bunnyMoveFontOrder(
+                              font.name,
+                              -1
+                            )
+                        }
+                      ),
+                      /* @__PURE__ */ jsx(
+                        BunnyFontOrderControl,
+                        {
+                          direction: "down",
+                          disabled:
+                            bunnyFontOrderIndex ===
+                            bunnyFontOrderItems.length - 1,
+                          label:
+                            "Move " +
+                            String(font?.name ?? "font") +
+                            " down",
+                          onPress: () =>
+                            bunnyMoveFontOrder(
+                              font.name,
+                              1
+                            )
+                        }
+                      )
+                    ]
+                  }
+                )
+              ]
+            }
+          )
+        : null;
+
+    return /* @__PURE__ */ jsx(Card, {
+""",
+                "Bunny FontCard inline order footer model"
+        );
+
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
+                """
+          /* @__PURE__ */ jsx(FontPreview, {
+            font
+          }),
+          /* @__PURE__ */ jsx(import_react_native26.View, {
+""",
+                """
+          /* @__PURE__ */ jsx(FontPreview, {
+            font
+          }),
+          bunnyFontOrderFooter,
+          !bunnyOrderEditing && /* @__PURE__ */ jsx(import_react_native26.View, {
+""",
+                "Bunny real FontCard inline order footer render"
+        );
+
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
+                """
+    useProxy(settings);
+    useProxy(fonts);
+    var navigation2 = NavigationNative.useNavigation();
+    return /* @__PURE__ */ jsx(AddonPage, {
+""",
+                """
+    useProxy(settings);
+    useProxy(fonts);
+    var navigation2 = NavigationNative.useNavigation();
+
+    var [
+      bunnyFontOrderEditing,
+      setBunnyFontOrderEditing
+    ] = React.useState(false);
+
+    React.useEffect(
+      () => {
+        if (!bunnyFontOrderEditing)
+          return;
+
+        if (
+          settings.bunnyFontSortMode !== "Manual"
+        ) {
+          setBunnyFontOrderEditing(false);
+        }
+      },
+      [
+        settings.bunnyFontSortMode,
+        bunnyFontOrderEditing
+      ]
+    );
+
+    var bunnyFontListCard =
+      React.useCallback(
+        (cardProps) =>
+          /* @__PURE__ */ jsx(
+            FontCard,
+            {
+              ...cardProps,
+              bunnyOrderEditing: bunnyFontOrderEditing
+            }
+          ),
+        [bunnyFontOrderEditing]
+      );
+
+    return /* @__PURE__ */ jsx(AddonPage, {
+""",
+                "Bunny Fonts inline order state"
         );
 
         patched = replaceBundleStructureExactlyOnce(
@@ -3995,36 +4167,55 @@ public final class BunnyBootstrap {
       ListHeaderComponent:
         settings.bunnyFontSortMode === "Manual"
           ? () =>
-              /* @__PURE__ */ jsx(
+              /* @__PURE__ */ jsxs(
                 import_react_native26.View,
                 {
                   style: {
                     paddingTop: 8,
-                    paddingBottom: 4
+                    paddingBottom: 4,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12
                   },
-                  children: /* @__PURE__ */ jsx(Button, {
-                    size: "sm",
-                    variant: "secondary",
-                    text: "Reorder Manual",
-                    onPress: () =>
-                      navigation2.push(
-                        "BUNNY_CUSTOM_PAGE",
-                        {
-                          title: "Reorder Fonts",
-                          render: () =>
-                            /* @__PURE__ */ jsx(
-                              BunnyFontReorderPage,
-                              {}
-                            )
-                        }
-                      )
-                  })
+                  children: [
+                    /* @__PURE__ */ jsx(Text, {
+                      variant: "text-sm/medium",
+                      color: "text-muted",
+                      children:
+                        bunnyFontOrderEditing
+                          ? "Editing manual order"
+                          : "Manual order"
+                    }),
+                    /* @__PURE__ */ jsx(Button, {
+                      size: "sm",
+                      variant:
+                        bunnyFontOrderEditing
+                          ? "primary"
+                          : "secondary",
+                      text:
+                        bunnyFontOrderEditing
+                          ? "Done"
+                          : "Edit order",
+                      onPress: () =>
+                        setBunnyFontOrderEditing(
+                          (editing) => !editing
+                        )
+                    })
+                  ]
                 }
               )
           : void 0,
       searchKeywords:
 """,
-                "Bunny Fonts Manual-only reorder entry"
+                "Bunny Fonts main-screen Edit order entry"
+        );
+
+        patched = replaceBundleStructureExactlyOnce(
+                patched,
+                "      CardComponent: FontCard,",
+                "      CardComponent: bunnyFontListCard,",
+                "Bunny Fonts real card edit-order wrapper"
         );
 
 
@@ -7516,63 +7707,171 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
                     new java.util.concurrent.atomic.AtomicLong();
 
     /*
-     * BUNNY_STATUS_BAR_STORED_THEME_TYPE_V1
+     * BUNNY_STATUS_BAR_LUMINANCE_LIFECYCLE_V3
      *
-     * Keep system-bar icon contrast tied to Bunny's selected base theme.
-     * Android's LIGHT_STATUS_BAR appearance means dark icons.
+     * bunnySyncStatusBar() already resolves the actual themed background and
+     * chooses icon contrast from that color's relative luminance.
+     *
+     * Native must preserve that exact choice. The old stored-theme "type"
+     * override could be stale during transitions and could overwrite a valid
+     * luminance decision.
+     *
+     * Persist the newest requested mode in-process and reapply it whenever a
+     * Discord Activity is created, started, or resumed.
      */
-    private static boolean resolveBunnyStatusBarDarkIconsFromStoredTheme(
-            boolean requestedDarkIcons
+    private static final Object
+            BUNNY_STATUS_BAR_LIFECYCLE_LOCK =
+                    new Object();
+
+    private static volatile boolean
+            bunnyStatusBarLifecycleRegistered =
+                    false;
+
+    private static volatile Boolean
+            bunnyDesiredStatusBarDarkIcons =
+                    null;
+
+    private static void registerBunnyStatusBarLifecycle(
+            Activity activity
     ) {
-        try {
-            Context context = appContext;
-
-            if (context == null) {
-                return requestedDarkIcons;
-            }
-
-            File themeFile =
-                    getBunnyThemeFile(context);
-
-            if (
-                    themeFile == null
-                            || !themeFile.isFile()
-                            || themeFile.length() <= 0L
-            ) {
-                return requestedDarkIcons;
-            }
-
-            JSONObject stored =
-                    new JSONObject(readUtf8(themeFile));
-
-            JSONObject data =
-                    stored.optJSONObject("data");
-
-            if (data == null) {
-                data = stored;
-            }
-
-            String type =
-                    data.optString("type", "")
-                            .trim();
-
-            if ("dark".equalsIgnoreCase(type)) {
-                return false;
-            }
-
-            if ("light".equalsIgnoreCase(type)) {
-                return true;
-            }
-        } catch (Throwable error) {
-            Log.w(
-                    TAG,
-                    "Bunny stored-theme status bar resolution failed",
-                    error
-            );
+        if (activity == null) {
+            return;
         }
 
-        return requestedDarkIcons;
+        synchronized (BUNNY_STATUS_BAR_LIFECYCLE_LOCK) {
+            if (bunnyStatusBarLifecycleRegistered) {
+                return;
+            }
+
+            final android.app.Application application =
+                    activity.getApplication();
+
+            if (application == null) {
+                return;
+            }
+
+            try {
+                application.registerActivityLifecycleCallbacks(
+                        new android.app.Application.ActivityLifecycleCallbacks() {
+                            private void onActiveActivity(
+                                    Activity activeActivity
+                            ) {
+                                if (activeActivity == null) {
+                                    return;
+                                }
+
+                                activityReference =
+                                        new WeakReference<>(
+                                                activeActivity
+                                        );
+
+                                reapplyBunnyStatusBarIconAppearance(
+                                        activeActivity
+                                );
+                            }
+
+                            @Override
+                            public void onActivityCreated(
+                                    Activity activeActivity,
+                                    android.os.Bundle savedInstanceState
+                            ) {
+                                onActiveActivity(activeActivity);
+                            }
+
+                            @Override
+                            public void onActivityStarted(
+                                    Activity activeActivity
+                            ) {
+                                onActiveActivity(activeActivity);
+                            }
+
+                            @Override
+                            public void onActivityResumed(
+                                    Activity activeActivity
+                            ) {
+                                onActiveActivity(activeActivity);
+                            }
+
+                            @Override
+                            public void onActivityPaused(
+                                    Activity activeActivity
+                            ) {
+                            }
+
+                            @Override
+                            public void onActivityStopped(
+                                    Activity activeActivity
+                            ) {
+                            }
+
+                            @Override
+                            public void onActivitySaveInstanceState(
+                                    Activity activeActivity,
+                                    android.os.Bundle outState
+                            ) {
+                            }
+
+                            @Override
+                            public void onActivityDestroyed(
+                                    Activity activeActivity
+                            ) {
+                            }
+                        }
+                );
+
+                bunnyStatusBarLifecycleRegistered =
+                        true;
+            } catch (Throwable error) {
+                Log.w(
+                        TAG,
+                        "Bunny status bar lifecycle registration failed",
+                        error
+                );
+            }
+        }
     }
+
+    private static void reapplyBunnyStatusBarIconAppearance(
+            Activity activity
+    ) {
+        final Boolean desiredDarkIcons =
+                bunnyDesiredStatusBarDarkIcons;
+
+        if (desiredDarkIcons == null) {
+            return;
+        }
+
+        applyBunnyStatusBarIconAppearance(
+                activity,
+                desiredDarkIcons.booleanValue()
+        );
+    }
+    /*
+     * BUNNY_STATUS_BAR_RN_STYLE_OWNER_V5
+     *
+     * React Native StatusBar.setBarStyle() reaches native as:
+     *   "dark-content"  -> dark status-bar icons
+     *   "light-content" -> light status-bar icons
+     *
+     * V3 already computes the desired contrast from the resolved theme
+     * background. Keep that exact decision authoritative for every later RN
+     * style write instead of trusting a stale host request.
+     */
+    public static String resolveBunnyHostStatusBarStyle(
+            String requestedStyle
+    ) {
+        Boolean desired =
+                bunnyDesiredStatusBarDarkIcons;
+
+        if (desired == null) {
+            return requestedStyle;
+        }
+
+        return desired.booleanValue()
+                ? "dark-content"
+                : "light-content";
+    }
+
     private static void applyBunnyStatusBarIconAppearance(
             Activity activity,
             boolean darkIcons
@@ -7581,6 +7880,9 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
             return;
         }
 
+        bunnyDesiredStatusBarDarkIcons =
+                darkIcons;
+
         final long appearanceGeneration =
                 BUNNY_STATUS_BAR_APPEARANCE_GENERATION
                         .incrementAndGet();
@@ -7588,83 +7890,11 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
         try {
             activity.runOnUiThread(() -> {
                 try {
-                    final android.view.Window window =
-                            activity.getWindow();
+                    final android.os.Handler mainHandler =
+                            new android.os.Handler(
+                                    android.os.Looper.getMainLooper()
+                            );
 
-                    if (window == null) {
-                        return;
-                    }
-
-                    final android.view.View decor =
-                            window.getDecorView();
-
-                    final Runnable apply =
-                            () -> {
-                                try {
-                                    if (
-                                            android.os.Build.VERSION.SDK_INT
-                                                    >= android.os.Build.VERSION_CODES.R
-                                    ) {
-                                        android.view.WindowInsetsController controller =
-                                                window.getInsetsController();
-
-                                        if (controller != null) {
-                                            final int lightStatusBars =
-                                                    android.view.WindowInsetsController
-                                                            .APPEARANCE_LIGHT_STATUS_BARS;
-
-                                            controller.setSystemBarsAppearance(
-                                                    darkIcons
-                                                            ? lightStatusBars
-                                                            : 0,
-                                                    lightStatusBars
-                                            );
-                                        }
-                                    } else if (
-                                            android.os.Build.VERSION.SDK_INT
-                                                    >= android.os.Build.VERSION_CODES.M
-                                    ) {
-                                        int flags =
-                                                decor.getSystemUiVisibility();
-
-                                        if (darkIcons) {
-                                            flags |=
-                                                    android.view.View
-                                                            .SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-                                        } else {
-                                            flags &=
-                                                    ~android.view.View
-                                                            .SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-                                        }
-
-                                        decor.setSystemUiVisibility(
-                                                flags
-                                        );
-                                    }
-                                } catch (Throwable error) {
-                                    Log.w(
-                                            TAG,
-                                            "Bunny status bar icon update failed",
-                                            error
-                                    );
-                                }
-                            };
-
-                    /*
-                     * Discord/RN can rewrite system-bar appearance during a
-                     * theme/navigation transaction. Reassert briefly.
-                     */
-                    /*
-                     * Persistent Bunny status-bar contrast owner.
-                     *
-                     * Discord/React Native may write status-bar appearance
-                     * again long after the theme transition. Keep the newest
-                     * Bunny request authoritative while this Activity/decor
-                     * remains alive.
-                     *
-                     * A newer theme request increments the generation and
-                     * immediately retires this Runnable.
-                     */
                     final Runnable[] statusBarWatchdog =
                             new Runnable[1];
 
@@ -7681,14 +7911,79 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
                                 if (
                                         activity.isFinishing()
                                                 || activity.isDestroyed()
-                                                || !decor.isAttachedToWindow()
                                 ) {
                                     return;
                                 }
 
-                                apply.run();
+                                try {
+                                    /*
+                                     * BUNNY_STATUS_BAR_DYNAMIC_WINDOW_V3
+                                     *
+                                     * Reacquire Window, decor, and controller on every
+                                     * pass. Discord can replace the effective decor
+                                     * while keeping the Activity alive.
+                                     */
+                                    final android.view.Window window =
+                                            activity.getWindow();
 
-                                decor.postDelayed(
+                                    if (window != null) {
+                                        final android.view.View decor =
+                                                window.getDecorView();
+
+                                        if (
+                                                android.os.Build.VERSION.SDK_INT
+                                                        >= android.os.Build.VERSION_CODES.R
+                                        ) {
+                                            android.view.WindowInsetsController controller =
+                                                    window.getInsetsController();
+
+                                            if (controller != null) {
+                                                final int lightStatusBars =
+                                                        android.view.WindowInsetsController
+                                                                .APPEARANCE_LIGHT_STATUS_BARS;
+
+                                                controller.setSystemBarsAppearance(
+                                                        darkIcons
+                                                                ? lightStatusBars
+                                                                : 0,
+                                                        lightStatusBars
+                                                );
+                                            }
+                                        } else if (
+                                                android.os.Build.VERSION.SDK_INT
+                                                        >= android.os.Build.VERSION_CODES.M
+                                                && decor != null
+                                        ) {
+                                            int flags =
+                                                    decor.getSystemUiVisibility();
+
+                                            if (darkIcons) {
+                                                flags |=
+                                                        android.view.View
+                                                                .SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                                            } else {
+                                                flags &=
+                                                        ~android.view.View
+                                                                .SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                                            }
+
+                                            decor.setSystemUiVisibility(flags);
+                                        }
+                                    }
+                                } catch (Throwable error) {
+                                    Log.w(
+                                            TAG,
+                                            "Bunny status bar icon update failed",
+                                            error
+                                    );
+                                }
+
+                                /*
+                                 * Schedule from the main Looper instead of the
+                                 * captured decor View. Replacing/detaching decor
+                                 * therefore cannot silently kill the owner.
+                                 */
+                                mainHandler.postDelayed(
                                         statusBarWatchdog[0],
                                         100L
                                 );
@@ -7711,7 +8006,6 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
             );
         }
     }
-
     public static boolean handleBunnyOpenUrl(
             String url,
             Object promise
@@ -7749,11 +8043,6 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
             final boolean requestedDarkIcons =
                     "dark".equalsIgnoreCase(iconMode);
 
-            final boolean darkIcons =
-                    resolveBunnyStatusBarDarkIconsFromStoredTheme(
-                            requestedDarkIcons
-                    );
-
             final boolean lightIcons =
                     "light".equalsIgnoreCase(iconMode);
 
@@ -7787,6 +8076,13 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
 
                 return true;
             }
+
+            /*
+             * JS already derived this request from the actual resolved
+             * background luminance. Preserve it exactly.
+             */
+            final boolean darkIcons =
+                    requestedDarkIcons;
 
             applyBunnyStatusBarIconAppearance(
                     activity,
@@ -12198,6 +12494,55 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
     }
 
     /**
+     * Fresh-storage theme removal hardening.
+     *
+     * A card can briefly outlive its keyed themes[] entry while React handles
+     * the DEL event. Also, a stale card can invoke removeTheme() after the key
+     * is already gone. Both upstream reads dereference .selected without
+     * checking that the keyed entry still exists.
+     */
+    private static String patchFreshThemeRemovalResilience(
+            String source
+    ) throws IOException {
+        source = replaceBundleStructureExactlyOnce(
+                source,
+                "  function _removeTheme() {\n" +
+                        "    _removeTheme = _async_to_generator(function* (id) {\n" +
+                        "      var theme = themes[id];\n" +
+                        "      if (theme.selected)\n" +
+                        "        yield selectTheme(null);\n" +
+                        "      delete themes[id];\n" +
+                        "      return theme.selected;\n" +
+                        "    });\n" +
+                        "    return _removeTheme.apply(this, arguments);\n" +
+                        "  }\n",
+                "  function _removeTheme() {\n" +
+                        "    _removeTheme = _async_to_generator(function* (id) {\n" +
+                        "      /* BUNNY_THEME_REMOVE_STALE_GUARD_V1 */\n" +
+                        "      var theme = themes[id];\n" +
+                        "      if (!theme)\n" +
+                        "        return false;\n" +
+                        "      var wasSelected = !!theme.selected;\n" +
+                        "      if (wasSelected)\n" +
+                        "        yield selectTheme(null);\n" +
+                        "      delete themes[id];\n" +
+                        "      return wasSelected;\n" +
+                        "    });\n" +
+                        "    return _removeTheme.apply(this, arguments);\n" +
+                        "  }\n",
+                "Bunny stale theme removal guard"
+        );
+
+        return replaceBundleStructureExactlyOnce(
+                source,
+                "      toggleValue: () => themes[theme.id].selected,\n",
+                "      /* BUNNY_THEME_CARD_STALE_TOGGLE_GUARD_V1 */\n" +
+                        "      toggleValue: () => themes[theme.id]?.selected ?? false,\n",
+                "Bunny stale ThemeCard toggle guard"
+        );
+    }
+
+    /**
      * The archived Bunny storage compatibility layer exposes some stores via
      * wrapSync(createStorage(...)). On a fresh install the backing Promise may
      * still be unresolved when a page calls useProxy(), which means the old
@@ -12297,9 +12642,10 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
 
         String[] replacementLines = {
                 "function wrapSync(store) {",
-                "  /* BUNNY_FRESH_STORAGE_PENDING_WRITE_REPLAY_V2 */",
+                "  /* BUNNY_FRESH_STORAGE_PENDING_MUTATION_REPLAY_V3 */",
                 "  var awaited = void 0;",
                 "  var bunnyPendingStorage = {};",
+                "  var bunnyPendingDeletes = new Set();",
                 "  var awaitQueue = [];",
                 "  var bunnyStorageListeners = {",
                 "    SET: /* @__PURE__ */ new Set(),",
@@ -12322,6 +12668,10 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
                 "      resolvedEmitter.on(\"SET\", bunnyForwardStorageEvent);",
                 "      resolvedEmitter.on(\"DEL\", bunnyForwardStorageEvent);",
                 "    }",
+                "    for (var key of bunnyPendingDeletes) {",
+                "      Reflect.deleteProperty(awaited, key);",
+                "    }",
+                "    bunnyPendingDeletes.clear();",
                 "    for (var key of Reflect.ownKeys(bunnyPendingStorage)) {",
                 "      Reflect.set(awaited, key, Reflect.get(bunnyPendingStorage, key));",
                 "    }",
@@ -12339,9 +12689,21 @@ public static java.lang.Integer resolveBunnyReactBackgroundColorBase(
                 "    set(target, prop, value) {",
                 "      if (awaited)",
                 "        return Reflect.set(awaited, prop, value);",
+                "      bunnyPendingDeletes.delete(prop);",
                 "      var result = Reflect.set(target, prop, value);",
                 "      if (result)",
                 "        bunnyStorageEmitter.emit(\"SET\", { path: [prop], value });",
+                "      return result;",
+                "    },",
+                "    deleteProperty(target, prop) {",
+                "      if (awaited)",
+                "        return Reflect.deleteProperty(awaited, prop);",
+                "      var value = Reflect.get(target, prop);",
+                "      var result = Reflect.deleteProperty(target, prop);",
+                "      if (result) {",
+                "        bunnyPendingDeletes.add(prop);",
+                "        bunnyStorageEmitter.emit(\"DEL\", { path: [prop], value });",
+                "      }",
                 "      return result;",
                 "    },",
                 "    get(target, prop, recv) {",
