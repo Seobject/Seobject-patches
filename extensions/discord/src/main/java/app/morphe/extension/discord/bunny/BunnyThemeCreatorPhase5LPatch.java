@@ -66,6 +66,8 @@ final class BunnyThemeCreatorPhase5LPatch {
         patched = patchChatBackgroundIntoNativeViewV5(patched);
         patched = patchUrlBackgroundPreview(patched);
         patched = patchUrlBackgroundImmediateLocalImportV8(patched);
+        patched = patchChatBackgroundThemeLifecycleV10(patched);
+        patched = patchCreatorSaveStorageResilienceV11(patched);
 
         verifyShippingRuntime(patched);
         verifyFinalBackgroundFix(patched);
@@ -1753,10 +1755,213 @@ final class BunnyThemeCreatorPhase5LPatch {
     }
 
 
+
+    private static String patchChatBackgroundThemeLifecycleV10(
+            String source
+    ) throws IOException {
+        final String marker =
+                "BUNNY_CHAT_BACKGROUND_THEME_LIFECYCLE_V10";
+
+        if (source.contains(marker)) {
+            return source;
+        }
+
+        /*
+         * First-install / first-launch hardening.
+         *
+         * The native V5 path is deliberately independent from React rendering,
+         * but its JS handoff historically depended on Messages.render().
+         * On a cold first launch, the message surface can render before the
+         * active Bunny theme has populated _colorRef.current. If that render is
+         * not repeated after theme hydration, native never receives the saved
+         * background until a later process/install cycle changes timing.
+         *
+         * updateBunnyColor() is the authoritative lifecycle boundary where
+         * _colorRef.current is assigned. Queue one microtask after every
+         * successful assignment so the existing native bridge receives the
+         * current media as soon as the theme is authoritative. The existing
+         * Messages.render sync remains as a fail-open fallback.
+         */
+        String updateAnchor =
+                "    if (update) {\n" +
+                "      AppearanceManager.setShouldSyncAppearanceSettings(false);\n" +
+                "      AppearanceManager.updateTheme(internalDef != null ? ref.key : ref.lastSetDiscordTheme);\n" +
+                "    }\n" +
+                "  }\n" +
+                "  var tokenRef2, origRawColor, AppearanceManager, ThemeStore, FormDivider, _inc, _colorRef;\n";
+
+        String updateReplacement =
+                "    if (update) {\n" +
+                "      AppearanceManager.setShouldSyncAppearanceSettings(false);\n" +
+                "      AppearanceManager.updateTheme(internalDef != null ? ref.key : ref.lastSetDiscordTheme);\n" +
+                "    }\n" +
+                "\n" +
+                "    /* BUNNY_CHAT_BACKGROUND_THEME_LIFECYCLE_V10 */\n" +
+                "    try {\n" +
+                "      Promise.resolve()\n" +
+                "        .then(() => bunnySyncNativeChatBackground())\n" +
+                "        .catch(() => {});\n" +
+                "    } catch (_) {\n" +
+                "    }\n" +
+                "  }\n" +
+                "  var tokenRef2, origRawColor, AppearanceManager, ThemeStore, FormDivider, _inc, _colorRef;\n";
+
+        return replaceExactlyOnce(
+                source,
+                updateAnchor,
+                updateReplacement,
+                "Bunny chat background theme lifecycle V10"
+        );
+    }
+
+
+
+
+    private static String patchCreatorSaveStorageResilienceV11(
+            String source
+    ) throws IOException {
+        final String marker =
+                "BUNNY_CREATOR_SAVE_STORAGE_RESILIENCE_V11";
+
+        if (source.contains(marker)) {
+            return source;
+        }
+
+        String creatorStart =
+                "  function BunnyThemeCreator({ onSaved, controllerRef, onStatusChange }) {\n";
+        String creatorEnd =
+                "  function Themes() {\n";
+
+        String creator = extractRangeExactlyOnce(
+                source,
+                creatorStart,
+                creatorEnd,
+                "Creator save storage V11"
+        );
+
+        /*
+         * Do not match the whole historical promise chain. Earlier Creator
+         * transforms legitimately change formatting and individual statements
+         * inside this range. Only the two lifecycle boundaries are owned by
+         * this patch:
+         *
+         *   start: Creator begins persistence through awaitStorage(themes)
+         *   end:   Creator begins its post-save UI/state finalization
+         *
+         * Both boundaries are unique inside BunnyThemeCreator.
+         */
+        String persistenceStart =
+                "        return awaitStorage(themes).then(() => {\n";
+
+        String persistenceEnd =
+                "          initialDraftRef.current = bunnyCreatorSnapshot(saveDraft);\n";
+
+        String newPersistence = """
+        /* BUNNY_CREATOR_SAVE_STORAGE_RESILIENCE_V11 */
+        var bunnyThemeBackend =
+          createFileBackend("vd_mmkv/VENDETTA_THEMES");
+
+        return Promise.resolve(
+          bunnyThemeBackend.get()
+        ).catch(() => ({})).then((storedThemes) => {
+          var bunnyStoredThemes =
+            storedThemes &&
+            typeof storedThemes === "object"
+              ? { ...storedThemes }
+              : {};
+
+          if (bunnySavingExistingTheme) {
+            entry.selected =
+              !!bunnyStoredThemes[id]?.selected;
+          }
+
+          if (apply) {
+            Object.keys(bunnyStoredThemes).forEach((key) => {
+              if (
+                bunnyStoredThemes[key] &&
+                typeof bunnyStoredThemes[key] === "object"
+              ) {
+                bunnyStoredThemes[key] = {
+                  ...bunnyStoredThemes[key],
+                  selected: key === id
+                };
+              }
+            });
+            entry.selected = true;
+          }
+
+          bunnyStoredThemes[id] = entry;
+
+          return Promise.resolve(
+            bunnyThemeBackend.set(bunnyStoredThemes)
+          ).then(() => {
+            /*
+             * Persist first, then mirror through wrapSync immediately.
+             * The fresh-storage bridge queues/replays these writes if the
+             * backing themes store has not resolved yet.
+             */
+            Object.keys(bunnyStoredThemes).forEach((key) => {
+              themes[key] = bunnyStoredThemes[key];
+            });
+
+            return bunnyStoredThemes;
+          });
+        }).then((bunnyStoredThemes) => {
+          if (!apply) return bunnyStoredThemes;
+
+          return Promise.resolve(
+            selectTheme(entry)
+          ).then(() => {
+            updateBunnyColor(
+              entry.data,
+              { update: true }
+            );
+            return bunnyStoredThemes;
+          });
+        }).then((bunnyStoredThemes) =>
+          Promise.resolve(
+            bunnyThemeBackend.set(bunnyStoredThemes)
+          )
+        ).then(() => {
+
+""";
+
+        creator = replaceRangeExactlyOnce(
+                creator,
+                persistenceStart,
+                persistenceEnd,
+                newPersistence,
+                "Creator save persistence V11"
+        );
+
+        if (creator.contains(persistenceStart)) {
+            throw new IOException(
+                    "Creator save persistence V11 old blocking start survived"
+            );
+        }
+
+        if (!creator.contains(marker)) {
+            throw new IOException(
+                    "Creator save persistence V11 marker missing after transform"
+            );
+        }
+
+        return replaceRangeExactlyOnce(
+                source,
+                creatorStart,
+                creatorEnd,
+                creator,
+                "Creator save storage V11 install"
+        );
+    }
+
+
     private static void verifyFinalBackgroundFix(String source) throws IOException {
         String[] required = {
                 "BUNNY_CHAT_BACKGROUND_MEDIA_FINAL_V1",
                 "BUNNY_URL_BACKGROUND_PREVIEW_CACHE_V1",
+                "BUNNY_CHAT_BACKGROUND_THEME_LIFECYCLE_V10",
+                "BUNNY_CREATOR_SAVE_STORAGE_RESILIENCE_V11",
                 "bunnyFinalThemeBackgroundResolve",
                 "bunnyFinalThemeBackgroundRemoteCache",
                 "bunnyUrlBackgroundPreview",
